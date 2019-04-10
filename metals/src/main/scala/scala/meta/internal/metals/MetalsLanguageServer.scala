@@ -39,8 +39,10 @@ import scala.concurrent.Promise
 import scala.concurrent.TimeoutException
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.BuildTool.Sbt
+import scala.meta.internal.metals.CommandArguments.StringArg
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.mtags._
+import scala.meta.internal.semanticdb.Scala._
 import scala.meta.io.AbsolutePath
 import scala.meta.parsers.ParseException
 import scala.meta.tokenizers.TokenizeException
@@ -107,6 +109,7 @@ class MetalsLanguageServer(
     new DelegatingLanguageClient(NoopLanguageClient, config)
   var userConfig = UserConfiguration()
   val buildTargets: BuildTargets = new BuildTargets()
+  private val codeRunner = new CodeRunner(buildTargets, languageClient)
   private val fileWatcher = register(
     new FileWatcher(
       buildTargets,
@@ -120,6 +123,7 @@ class MetalsLanguageServer(
   private var diagnostics: Diagnostics = _
   private var warnings: Warnings = _
   private var trees: Trees = _
+  private var codeLensProvider: CodeLensProvider = _
   private var documentSymbolProvider: DocumentSymbolProvider = _
   private var fileSystemSemanticdbs: FileSystemSemanticdbs = _
   private var interactiveSemanticdbs: InteractiveSemanticdbs = _
@@ -300,6 +304,7 @@ class MetalsLanguageServer(
       },
       interactiveSemanticdbs.toFileOnDisk
     )
+    codeLensProvider = new CodeLensProvider(trees, buffers)
     foldingRangeProvider = FoldingRangeProvider(trees, buffers, params)
     compilers = register(
       new Compilers(
@@ -353,6 +358,7 @@ class MetalsLanguageServer(
           ServerCommands.all.map(_.id).asJava
         )
       )
+      capabilities.setCodeLensProvider(new CodeLensOptions(false))
       capabilities.setFoldingRangeProvider(true)
       capabilities.setDefinitionProvider(true)
       capabilities.setHoverProvider(true)
@@ -878,8 +884,8 @@ class MetalsLanguageServer(
       params: CodeLensParams
   ): CompletableFuture[util.List[CodeLens]] =
     CancelTokens { _ =>
-      scribe.warn("textDocument/codeLens is not supported.")
-      null
+      val sourceFile = params.getTextDocument.getUri.toAbsolutePath
+      codeLensProvider.getCodeLensesFor(sourceFile)
     }
 
   @JsonRequest("textDocument/foldingRange")
@@ -954,6 +960,38 @@ class MetalsLanguageServer(
         Future {
           compilers.restartAll()
         }.asJavaObject
+      case CodeLensCommands.RunCode() =>
+        params.getArguments.asScala.toList match {
+          case StringArg(filepath) :: Nil =>
+            val result = for {
+              buildChange <- quickConnectToBuildServer()
+              server <- buildChange match {
+                case BuildChange.Failed =>
+                  Future.failed(
+                    new IllegalStateException(
+                      "Could not connect to the build server"
+                    )
+                  )
+                case _ =>
+                  buildServer match {
+                    case None =>
+                      Future.failed(
+                        new IllegalStateException(
+                          "Nothing to compile with"
+                        )
+                      )
+                    case Some(server) => Future.successful(server)
+                  }
+              }
+              result <- codeRunner.runCode(filepath.toAbsolutePath, server)
+            } yield result
+            result.asJavaObject
+          case _ =>
+            Future.successful(()).asJavaObject
+        }
+      case CancelCommand(command) =>
+        val noLongerRunning = codeRunner.cancel(command)
+        Future.successful(noLongerRunning).asJavaObject
       case els =>
         scribe.error(s"Unknown command '$els'")
         Future.successful(()).asJavaObject

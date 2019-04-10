@@ -15,6 +15,7 @@ import java.util.Collections
 import java.util.concurrent.ScheduledExecutorService
 import com.google.gson.JsonParser
 import org.eclipse.lsp4j.ClientCapabilities
+import org.eclipse.lsp4j.CodeLensParams
 import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DidChangeConfigurationParams
@@ -54,6 +55,7 @@ import scala.meta.Input
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.io.PathIO
 import scala.meta.internal.metals.Buffers
+import scala.meta.internal.metals.Command
 import scala.meta.internal.metals.Debug
 import scala.meta.internal.metals.DidFocusResult
 import scala.meta.internal.metals.Directories
@@ -94,6 +96,12 @@ final class TestingServer(
     time: Time,
     newBloopClassloader: () => URLClassLoader
 )(implicit ex: ExecutionContextExecutorService) {
+  private implicit def stringToDocumentId(
+      filename: String
+  ): TextDocumentIdentifier = {
+    new TextDocumentIdentifier(toPath(filename).toURI.toString)
+  }
+
   val server = new MetalsLanguageServer(
     ex,
     buffers = buffers,
@@ -279,6 +287,28 @@ final class TestingServer(
       .asScala
       .ignoreValue
   }
+
+  def executeCodeLens[A](filename: String, command: Command[A]): Future[A] = {
+    for {
+      lenses <- server.codeLens(new CodeLensParams(filename)).asScala
+      parameters <- lenses.asScala.find(_.getCommand.getCommand == command.id) match {
+        case Some(lens) =>
+          val params = new ExecuteCommandParams(
+            lens.getCommand.getCommand,
+            lens.getCommand.getArguments
+          )
+          Future.successful(params)
+        case _ =>
+          Future.failed(
+            new IllegalStateException(
+              s"No lens related to command: ${command.id}"
+            )
+          )
+      }
+      result <- server.executeCommand(parameters).asScala
+    } yield result.asInstanceOf[A]
+  }
+
   def didFocus(filename: String): Future[DidFocusResult.Value] = {
     server.didFocus(toPath(filename).toURI.toString).asScala
   }

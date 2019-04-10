@@ -10,7 +10,7 @@ import scala.meta.internal.metals.ServerCommands
 class CommandsModifiers extends StringModifier {
   override val name: String = "commands"
 
-  def format(commands: List[Command]): String = {
+  def format(commands: List[Command[_]]): String = {
     commands
       .map { command =>
         s"""### ${command.title}

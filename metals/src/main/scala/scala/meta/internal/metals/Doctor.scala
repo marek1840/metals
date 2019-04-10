@@ -56,7 +56,7 @@ final class Doctor(
   }
 
   private def executeDoctor(
-      clientCommand: Command,
+      clientCommand: Command[_],
       onServer: MetalsHttpServer => Unit
   ): Unit = {
     if (config.executeClientCommand.isOn) {
