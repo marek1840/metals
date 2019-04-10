@@ -5,6 +5,8 @@ import ch.epfl.scala.bsp4j.CompileParams
 import ch.epfl.scala.bsp4j.CompileResult
 import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.InitializeBuildResult
+import ch.epfl.scala.bsp4j.RunParams
+import ch.epfl.scala.bsp4j.RunResult
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Collections
@@ -57,6 +59,10 @@ case class BuildServerConnection(
 
   def compile(params: CompileParams): CompletableFuture[CompileResult] = {
     register(server.buildTargetCompile(params))
+  }
+
+  def run(params: RunParams): CompletableFuture[RunResult] = {
+    register(server.buildTargetRun(params))
   }
 
   private val cancelled = new AtomicBoolean(false)

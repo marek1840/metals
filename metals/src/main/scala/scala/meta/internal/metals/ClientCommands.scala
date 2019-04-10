@@ -39,7 +39,7 @@ object ClientCommands {
        |""".stripMargin
   )
 
-  def all: List[Command] = List(
+  def all: List[Command[_]] = List(
     RunDoctor,
     ToggleLogs,
     FocusDiagnostics
