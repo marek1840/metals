@@ -1,12 +1,12 @@
 package scala.meta.internal.metals
 
-import ch.epfl.scala.bsp4j.RunResult
+import ch.epfl.scala.{bsp4j => b}
 
 /**
  * Commands issued by code lenses
  */
 object CodeLensCommands {
-  val RunCode = Command[RunResult](
+  val RunCode = Command[b.RunResult](
     "code-run",
     "run",
     "runs code", // TODO,
