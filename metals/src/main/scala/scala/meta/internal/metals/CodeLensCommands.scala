@@ -12,4 +12,11 @@ object CodeLensCommands {
     "runs code", // TODO,
     "`string`, source file path"
   )
+
+  val RunTest = Command[b.TestResult](
+    "run-test",
+    "test",
+    "runs test", // TODO,
+    "`string`, source file path"
+  )
 }

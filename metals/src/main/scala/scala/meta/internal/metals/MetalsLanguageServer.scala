@@ -902,13 +902,13 @@ class MetalsLanguageServer(
               case Some(server) => Future.successful(server)
             }
         }
-        foo = new RunCodeLensProvider(
+        provider = CodeLensProvider.create(
           buildTargets,
           server,
           semanticdbs,
           buffers
         )
-        result <- foo.findLenses(sourceFile)
+        result <- provider.findLenses(sourceFile)
       } yield result
     }
 

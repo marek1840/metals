@@ -1,21 +1,20 @@
 package scala.meta.internal.metals
+
 import java.util
 import java.util.Collections._
-import ch.epfl.scala.bsp4j.ScalaMainClass
-import ch.epfl.scala.bsp4j.ScalaMainClassesItem
-import ch.epfl.scala.bsp4j.ScalaMainClassesParams
-import ch.epfl.scala.bsp4j.ScalaMainClassesResult
+import ch.epfl.scala.bsp4j.ScalaTestClassesItem
+import ch.epfl.scala.{bsp4j => b}
 import org.eclipse.{lsp4j => l}
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.meta.internal.metals.CodeLensCommands.RunCode
+import scala.meta.internal.metals.CodeLensCommands.RunTest
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.metals.TokenEditDistance.fromBuffer
 import scala.meta.internal.mtags.Semanticdbs
 import scala.meta.io.AbsolutePath
 
-final class RunCodeLensProvider(
+final class TestLensProvider(
     buildTargets: BuildTargets,
     buildServer: BuildServerConnection,
     semanticdbs: Semanticdbs,
@@ -25,13 +24,13 @@ final class RunCodeLensProvider(
 
   def findLenses(path: AbsolutePath): Future[util.List[l.CodeLens]] = {
     for {
-      classes <- mainClassesWithinBuildTarget(path)
+      classes <- testClassesWithinBuildTarget(path)
       lenses = if (classes.isEmpty) Nil else findLocations(classes, path)
     } yield lenses.asJava
   }
 
   private def findLocations(
-      classes: Map[String, ScalaMainClass],
+      classes: Map[String, String],
       path: AbsolutePath
   ): List[l.CodeLens] = {
     semanticdbs.textDocument(path).getE match {
@@ -41,60 +40,50 @@ final class RunCodeLensProvider(
         val lenses = for {
           occurrence <- textDocument.occurrences
           if classes.contains(occurrence.symbol)
-          mainClass = classes(occurrence.symbol)
+          testClass = classes(occurrence.symbol)
           range <- occurrence.range
             .map(_.toLSP)
             .flatMap(distance.toRevised)
             .toSeq
-          arguments = List(
-            path.toURI.toString,
-            mainClass.getClassName,
-            mainClass.getArguments,
-            mainClass.getJvmOptions
-          )
-        } yield RunCode.lens(range, arguments)
-
+          arguments = List(path.toURI.toString, testClass)
+        } yield RunTest.lens(range, arguments)
         lenses.toList
       case _ => Nil
     }
   }
 
-  private def mainClassesWithinBuildTarget(
+  private def testClassesWithinBuildTarget(
       path: AbsolutePath
-  ): Future[Map[String, ScalaMainClass]] = {
+  ): Future[Map[String, String]] = {
     buildTargets.inverseSources(path) match {
       case None =>
         Future.successful(Map())
       case Some(buildTarget) =>
-        val parameters = new ScalaMainClassesParams(singletonList(buildTarget))
-        // TODO remove dummy data when BSP starts supporting the mainClasses request
-        val aClass = new ScalaMainClass()
-        aClass.setClassName("example.OtherMain")
+        val parameters =
+          new b.ScalaTestClassesParams(singletonList(buildTarget))
+        // TODO remove dummy data when BSP starts supporting the TestClasses request
 
-        val dummy = new ScalaMainClassesResult(
+        val dummy = new b.ScalaTestClassesResult(
           singletonList(
-            new ScalaMainClassesItem(
-              buildTarget,
-              singletonList(aClass)
-            )
+            new ScalaTestClassesItem(buildTarget, singletonList("example.Test"))
           )
         )
 
         for {
-          result <- Future.successful(dummy) //buildServer.mainClasses(parameters).asScala
+          result <- Future.successful(dummy) //buildServer.testClasses(parameters).asScala
           classes = classesBySymbol(result)
         } yield classes
     }
   }
 
   private def classesBySymbol(
-      result: ScalaMainClassesResult
-  ): Map[String, ScalaMainClass] = {
-    val classesBySymbol = mutable.Map.empty[String, ScalaMainClass]
+      result: b.ScalaTestClassesResult
+  ): Map[String, String] = {
+    val classesBySymbol = mutable.Map.empty[String, String]
     for {
       item <- result.getItems.asScala
       aClass <- item.getClasses.asScala
-      objectSymbol = aClass.getClassName.replaceAll("\\.", "/") + "."
+      objectSymbol = aClass.replaceAll("\\.", "/") + "."
     } classesBySymbol += (objectSymbol -> aClass)
 
     classesBySymbol.toMap
