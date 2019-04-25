@@ -123,7 +123,6 @@ class MetalsLanguageServer(
   private var diagnostics: Diagnostics = _
   private var warnings: Warnings = _
   private var trees: Trees = _
-  private var codeLensProvider: CodeLensProvider = _
   private var documentSymbolProvider: DocumentSymbolProvider = _
   private var fileSystemSemanticdbs: FileSystemSemanticdbs = _
   private var interactiveSemanticdbs: InteractiveSemanticdbs = _
@@ -304,7 +303,6 @@ class MetalsLanguageServer(
       },
       interactiveSemanticdbs.toFileOnDisk
     )
-    codeLensProvider = new CodeLensProvider(trees, buffers)
     foldingRangeProvider = FoldingRangeProvider(trees, buffers, params)
     compilers = register(
       new Compilers(
@@ -882,9 +880,36 @@ class MetalsLanguageServer(
   def codeLens(
       params: CodeLensParams
   ): CompletableFuture[util.List[CodeLens]] =
-    CancelTokens { _ =>
+    CancelTokens.future { _ =>
       val sourceFile = params.getTextDocument.getUri.toAbsolutePath
-      codeLensProvider.getCodeLensesFor(sourceFile)
+      for {
+        buildChange <- quickConnectToBuildServer()
+        server <- buildChange match {
+          case BuildChange.Failed =>
+            Future.failed(
+              new IllegalStateException(
+                "Could not connect to the build server"
+              )
+            )
+          case _ =>
+            buildServer match {
+              case None =>
+                Future.failed(
+                  new IllegalStateException(
+                    "Nothing to compile with"
+                  )
+                )
+              case Some(server) => Future.successful(server)
+            }
+        }
+        foo = new RunCodeLensProvider(
+          buildTargets,
+          server,
+          semanticdbs,
+          buffers
+        )
+        result <- foo.findLenses(sourceFile)
+      } yield result
     }
 
   @JsonRequest("textDocument/foldingRange")
@@ -961,6 +986,7 @@ class MetalsLanguageServer(
         }.asJavaObject
       case CodeLensCommands.RunCode() =>
         params.getArguments.asScala.toList match {
+          // TODO parse to CodeRunArguments when BSP starts supporting running specific classes
           case StringArg(filepath) :: Nil =>
             val result = for {
               buildChange <- quickConnectToBuildServer()

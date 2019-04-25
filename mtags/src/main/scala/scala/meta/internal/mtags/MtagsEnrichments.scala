@@ -35,6 +35,7 @@ trait MtagsEnrichments {
       range.startLine == range.endLine &&
       range.startCharacter == range.endCharacter
     }
+
     def encloses(other: s.Range): Boolean = {
       range.startLine <= other.startLine &&
       range.endLine >= other.endLine &&
