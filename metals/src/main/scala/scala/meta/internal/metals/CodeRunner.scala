@@ -7,10 +7,12 @@ import java.util.concurrent.ConcurrentHashMap
 import ch.epfl.scala.{bsp4j => b}
 import org.eclipse.{lsp4j => l}
 import scala.concurrent.Future
+import scala.meta.internal.metals.CodeLensCommands.RunCodeArgs
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.io.AbsolutePath
 
 final class CodeRunner(
+    buildServer: () => Option[BuildServerConnection],
     buildTargets: BuildTargets,
     languageClient: MetalsLanguageClient
 ) {
@@ -18,19 +20,21 @@ final class CodeRunner(
     new ConcurrentHashMap[String, CompletableFuture[b.RunResult]]()
 
   def runCode(
-      path: AbsolutePath,
-      buildServer: BuildServerConnection
+      args: RunCodeArgs
   ): Future[b.RunResult] = {
-    val target = buildTargets.inverseSources(path)
-    target match {
-      case None =>
-        val result = new b.RunResult(b.StatusCode.CANCELLED)
-        Future.successful(result)
-      case Some(id) =>
-        val params = new b.RunParams(id)
-        val task = buildServer.run(params)
-        register(path, task)
-        task.asScala
+    val task = for {
+      server <- buildServer()
+      id <- buildTargets.inverseSources(args.file)
+    } yield {
+      val params = new b.RunParams(id)
+      val task = server.run(params)
+      register(args.file, task)
+      task.asScala
+    }
+
+    task.getOrElse {
+      val result = new b.RunResult(b.StatusCode.CANCELLED)
+      Future.successful(result)
     }
   }
 

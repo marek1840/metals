@@ -301,7 +301,7 @@ final class TestingServer(
         case _ =>
           Future.failed(
             new IllegalStateException(
-              s"No lens related to command: ${command.id}"
+              s"No lens for command: ${command.id}"
             )
           )
       }

@@ -39,7 +39,7 @@ import scala.concurrent.Promise
 import scala.concurrent.TimeoutException
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.BuildTool.Sbt
-import scala.meta.internal.metals.CommandArguments.StringArg
+import scala.meta.internal.metals.CodeLensCommands.RunCodeArgs
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.mtags._
 import scala.meta.internal.semanticdb.Scala._
@@ -101,6 +101,7 @@ class MetalsLanguageServer(
   private val definitionIndex = newSymbolIndex()
   private val symbolDocs = new Docstrings(definitionIndex)
   var buildServer = Option.empty[BuildServerConnection]
+  private val postCompileCache = new PostCompileCache(() => buildServer)
   private val openTextDocument = new AtomicReference[AbsolutePath]()
   private val savedFiles = new ActiveFiles(time)
   private val openedFiles = new ActiveFiles(time)
@@ -109,7 +110,8 @@ class MetalsLanguageServer(
     new DelegatingLanguageClient(NoopLanguageClient, config)
   var userConfig = UserConfiguration()
   val buildTargets: BuildTargets = new BuildTargets()
-  private val codeRunner = new CodeRunner(buildTargets, languageClient)
+  private val codeRunner =
+    new CodeRunner(() => buildServer, buildTargets, languageClient)
   private val fileWatcher = register(
     new FileWatcher(
       buildTargets,
@@ -131,6 +133,7 @@ class MetalsLanguageServer(
   private var buildClient: ForwardingMetalsBuildClient = _
   private var bloopServers: BloopServers = _
   private var bspServers: BspServers = _
+  private var codeLensProvider: RunCodeLensProvider = _
   private var definitionProvider: DefinitionProvider = _
   private var documentHighlightProvider: DocumentHighlightProvider = _
   private var formattingProvider: FormattingProvider = _
@@ -212,7 +215,8 @@ class MetalsLanguageServer(
       config,
       statusBar,
       time,
-      report => compilers.didCompile(report)
+      report => compilers.didCompile(report),
+      postCompileCache
     )
     trees = new Trees(buffers, diagnostics)
     documentSymbolProvider = new DocumentSymbolProvider(trees)
@@ -254,6 +258,13 @@ class MetalsLanguageServer(
         interactiveSemanticdbs
       )
     )
+
+    codeLensProvider = new RunCodeLensProvider(
+      postCompileCache,
+      buffers,
+      semanticdbs
+    )
+
     definitionProvider = new DefinitionProvider(
       workspace,
       mtags,
@@ -881,36 +892,9 @@ class MetalsLanguageServer(
   def codeLens(
       params: CodeLensParams
   ): CompletableFuture[util.List[CodeLens]] =
-    CancelTokens.future { _ =>
+    CancelTokens { _ =>
       val sourceFile = params.getTextDocument.getUri.toAbsolutePath
-      for {
-        buildChange <- quickConnectToBuildServer()
-        server <- buildChange match {
-          case BuildChange.Failed =>
-            Future.failed(
-              new IllegalStateException(
-                "Could not connect to the build server"
-              )
-            )
-          case _ =>
-            buildServer match {
-              case None =>
-                Future.failed(
-                  new IllegalStateException(
-                    "Nothing to compile with"
-                  )
-                )
-              case Some(server) => Future.successful(server)
-            }
-        }
-        foo = new RunCodeLensProvider(
-          buildTargets,
-          server,
-          semanticdbs,
-          buffers
-        )
-        result <- foo.findLenses(sourceFile)
-      } yield result
+      codeLensProvider.findLenses(sourceFile)
     }
 
   @JsonRequest("textDocument/foldingRange")
@@ -987,33 +971,10 @@ class MetalsLanguageServer(
         }.asJavaObject
       case CodeLensCommands.RunCode() =>
         params.getArguments.asScala.toList match {
-          // TODO parse to CodeRunArguments when BSP starts supporting running specific classes
-          case StringArg(filepath) :: Nil =>
-            val result = for {
-              buildChange <- quickConnectToBuildServer()
-              server <- buildChange match {
-                case BuildChange.Failed =>
-                  Future.failed(
-                    new IllegalStateException(
-                      "Could not connect to the build server"
-                    )
-                  )
-                case _ =>
-                  buildServer match {
-                    case None =>
-                      Future.failed(
-                        new IllegalStateException(
-                          "Nothing to compile with"
-                        )
-                      )
-                    case Some(server) => Future.successful(server)
-                  }
-              }
-              result <- codeRunner.runCode(filepath.toAbsolutePath, server)
-            } yield result
-            result.asJavaObject
+          case RunCodeArgs(args) =>
+            codeRunner.runCode(args).asJavaObject
           case _ =>
-            Future.successful(()).asJavaObject
+            Future.failed(new IllegalArgumentException()).asJavaObject
         }
       case CancelCommand(command) =>
         val noLongerRunning = codeRunner.cancel(command)

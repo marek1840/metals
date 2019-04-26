@@ -27,7 +27,8 @@ final class ForwardingMetalsBuildClient(
     config: MetalsServerConfig,
     statusBar: StatusBar,
     time: Time,
-    didCompile: CompileReport => Unit
+    didCompile: CompileReport => Unit,
+    cache: PostCompileCache
 ) extends MetalsBuildClient
     with Cancelable {
 
@@ -131,6 +132,10 @@ final class ForwardingMetalsBuildClient(
           if (!compilation.isNoOp) {
             scribe.info(s"time: compiled $name in ${compilation.timer}")
           }
+          if (isSuccess) {
+            cache.afterCompiled(target)
+          }
+
           if (isSuccess) {
             if (hasReportedError.contains(target)) {
               // Only report success compilation if it fixes a previous compile error.
