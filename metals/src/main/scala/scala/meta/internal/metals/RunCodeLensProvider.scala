@@ -14,6 +14,7 @@ final class RunCodeLensProvider(
 ) {
 
   def findLenses(path: AbsolutePath): util.List[l.CodeLens] = {
+    scribe.info("Requested code lenses")
     if (cache.mainClasses.isEmpty) emptyList[l.CodeLens]()
     else findLocations(path).asJava
   }
@@ -33,10 +34,7 @@ final class RunCodeLensProvider(
             .map(_.toLSP)
             .flatMap(distance.toRevised)
             .toSeq
-          arguments = List(
-            path.toURI.toString,
-            mainClass.getClassName
-          )
+          arguments = Nil
         } yield
           new l.CodeLens(range, CodeLensCommands.RunCode.toLSP(arguments), null)
         lenses.toList

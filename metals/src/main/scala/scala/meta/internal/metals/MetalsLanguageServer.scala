@@ -970,6 +970,7 @@ class MetalsLanguageServer(
           compilers.restartAll()
         }.asJavaObject
       case CodeLensCommands.RunCode() =>
+        scribe.info("Running code")
         params.getArguments.asScala.toList match {
           case RunCodeArgs(args) =>
             codeRunner.runCode(args).asJavaObject
@@ -979,8 +980,8 @@ class MetalsLanguageServer(
       case CancelCommand(command) =>
         val noLongerRunning = codeRunner.cancel(command)
         Future.successful(noLongerRunning).asJavaObject
-      case els =>
-        scribe.error(s"Unknown command '$els'")
+      case cmd =>
+        scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject
     }
 

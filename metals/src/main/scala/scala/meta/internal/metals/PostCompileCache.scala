@@ -3,6 +3,7 @@ package scala.meta.internal.metals
 import java.util.Collections.singletonList
 import java.util.concurrent.ConcurrentHashMap
 import ch.epfl.scala.{bsp4j => b}
+import scala.concurrent.Future
 import scala.meta.internal.metals.MetalsEnrichments._
 
 // TODO maybe per build target?
@@ -13,14 +14,24 @@ final class PostCompileCache(buildServer: () => Option[BuildServerConnection]) {
     scribe.info(s">> Populating cache after ${target.getUri}")
     clear()
 
-    buildServer().foreach { connection =>
-      val parameters = new b.ScalaMainClassesParams(singletonList(target))
-      connection.mainClasses(parameters).thenAccept(initializeMainClasses)
+    buildServer() match {
+      case Some(connection) =>
+        val parameters = new b.ScalaMainClassesParams(singletonList(target))
+        connection
+          .mainClasses(parameters)
+          .thenAccept(initializeMainClasses)
+          .thenRun { () =>
+            scribe.info(s""">> Cache populated: 
+                           |mainClasses: ${mainClasses.keySet()}
+                           |""".stripMargin)
+          }
+      case None =>
+        scribe.info(">> No connection")
     }
-    scribe.info(">> Cache populated")
   }
 
   private def clear(): Unit = {
+    scribe.info(">> Clearing")
     mainClasses.clear()
   }
 

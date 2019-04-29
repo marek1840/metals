@@ -160,6 +160,8 @@ object BuildServerConnection {
           throw e
       }
     server.onBuildInitialized()
+
+    scribe.info(">> BS version:" + result.getVersion)
     result
   }
 }
