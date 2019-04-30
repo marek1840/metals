@@ -2,13 +2,16 @@ package scala.meta.internal.metals
 
 import java.util.Collections.singletonList
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import ch.epfl.scala.{bsp4j => b}
-import scala.concurrent.Future
 import scala.meta.internal.metals.MetalsEnrichments._
 
 // TODO maybe per build target?
 final class PostCompileCache(buildServer: () => Option[BuildServerConnection]) {
+  private val initialized = new AtomicBoolean(false)
   val mainClasses = new ConcurrentHashMap[String, b.ScalaMainClass]()
+
+  def isInitialized: Boolean = initialized.get()
 
   def afterCompiled(target: b.BuildTargetIdentifier): Unit = {
     scribe.info(s">> Populating cache after ${target.getUri}")
@@ -25,6 +28,8 @@ final class PostCompileCache(buildServer: () => Option[BuildServerConnection]) {
                            |mainClasses: ${mainClasses.keySet()}
                            |""".stripMargin)
           }
+
+        initialized.set(true)
       case None =>
         scribe.info(">> No connection")
     }

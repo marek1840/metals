@@ -132,10 +132,9 @@ final class ForwardingMetalsBuildClient(
           if (!compilation.isNoOp) {
             scribe.info(s"time: compiled $name in ${compilation.timer}")
           }
-          if (isSuccess) {
+          if (isSuccess && (!cache.isInitialized || !compilation.isNoOp)) {
             cache.afterCompiled(target)
           }
-
           if (isSuccess) {
             if (hasReportedError.contains(target)) {
               // Only report success compilation if it fixes a previous compile error.

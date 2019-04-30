@@ -27,4 +27,7 @@ object CodeLensCommands {
       }
   }
 
+  val all = List(
+    RunCode
+  )
 }

@@ -34,7 +34,10 @@ final class RunCodeLensProvider(
             .map(_.toLSP)
             .flatMap(distance.toRevised)
             .toSeq
-          arguments = Nil
+          arguments = List(
+            path.toURI.toString,
+            mainClass.getClassName
+          )
         } yield
           new l.CodeLens(range, CodeLensCommands.RunCode.toLSP(arguments), null)
         lenses.toList

@@ -100,13 +100,14 @@ object ServerCommands {
   val OpenBrowser: Regex = "browser-open-url:(.*)".r
   def OpenBrowser(url: String): String = s"browser-open-url:$url"
 
-  def all: List[Command[_]] = List(
-    ImportBuild,
-    ConnectBuildServer,
-    ScanWorkspaceSources,
-    RunDoctor,
-    CascadeCompile,
-    CancelCompile,
-    BspSwitch
-  )
+  def all: List[Command[_]] =
+    List(
+      ImportBuild,
+      ConnectBuildServer,
+      ScanWorkspaceSources,
+      RunDoctor,
+      CascadeCompile,
+      CancelCompile,
+      BspSwitch
+    ) ++ CodeLensCommands.all
 }
