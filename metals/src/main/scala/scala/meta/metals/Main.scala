@@ -12,11 +12,12 @@ import scala.meta.internal.metals.ConfiguredLanguageClient
 import scala.util.control.NonFatal
 
 object Main {
+  val exec = Executors.newCachedThreadPool()
+
   def main(args: Array[String]): Unit = {
     val systemIn = System.in
     val systemOut = System.out
     val tracePrinter = GlobalTrace.setup("LSP")
-    val exec = Executors.newCachedThreadPool()
     val ec = ExecutionContext.fromExecutorService(exec)
     val config = MetalsServerConfig.default
     val server = new MetalsLanguageServer(

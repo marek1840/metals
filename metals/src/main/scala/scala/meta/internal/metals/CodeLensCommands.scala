@@ -10,7 +10,7 @@ import scala.meta.internal.metals.MetalsEnrichments._
  */
 object CodeLensCommands {
   val RunCode = Command[b.RunResult](
-    "code-run",
+    "metals.scala.run",
     "run",
     "runs code", // TODO,
     "`string`, source file path"
@@ -28,6 +28,5 @@ object CodeLensCommands {
   }
 
   val all = List(
-    RunCode
-  )
+    )
 }

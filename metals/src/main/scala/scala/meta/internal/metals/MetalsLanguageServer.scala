@@ -13,7 +13,6 @@ import io.undertow.server.HttpServerExchange
 import java.net.URI
 import java.net.URLClassLoader
 import java.nio.charset.Charset
-
 import scala.meta.internal.semanticdb.Scala._
 import scala.meta.pc.CancelToken
 import java.nio.charset.StandardCharsets
@@ -25,18 +24,18 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-
 import org.eclipse.lsp4j._
 import org.eclipse.lsp4j.jsonrpc.messages.{Either => JEither}
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
-
 import scala.collection.concurrent.TrieMap
 import scala.collection.mutable.{ArrayBuffer, HashSet}
 import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.concurrent.TimeoutException
+import scala.meta.internal.debug.DebugCommands
+import scala.meta.internal.debug.ScalaDebugAdapter
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.BuildTool.Sbt
 import scala.meta.internal.metals.CodeLensCommands.RunCodeArgs
@@ -364,7 +363,7 @@ class MetalsLanguageServer(
       val capabilities = new ServerCapabilities()
       capabilities.setExecuteCommandProvider(
         new ExecuteCommandOptions(
-          ServerCommands.all.map(_.id).asJava
+          (ServerCommands.all.map(_.id) ++ DebugCommands.all).asJava
         )
       )
       capabilities.setCodeLensProvider(new CodeLensOptions(false))
@@ -969,14 +968,9 @@ class MetalsLanguageServer(
         Future {
           compilers.restartAll()
         }.asJavaObject
-      case CodeLensCommands.RunCode() =>
-        scribe.info("Running code")
-        params.getArguments.asScala.toList match {
-          case RunCodeArgs(args) =>
-            codeRunner.runCode(args).asJavaObject
-          case _ =>
-            Future.failed(new IllegalArgumentException()).asJavaObject
-        }
+      case DebugCommands.startSession =>
+        scribe.info("Starting debug session")
+        Future.successful(ScalaDebugAdapter.create(codeRunner)).asJavaObject
       case CancelCommand(command) =>
         val noLongerRunning = codeRunner.cancel(command)
         Future.successful(noLongerRunning).asJavaObject

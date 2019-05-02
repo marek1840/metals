@@ -19,16 +19,14 @@ final class CodeRunner(
   private val tasks =
     new ConcurrentHashMap[String, CompletableFuture[b.RunResult]]()
 
-  def runCode(
-      args: RunCodeArgs
-  ): Future[b.RunResult] = {
+  def run(file: AbsolutePath): Future[b.RunResult] = {
     val task = for {
       server <- buildServer()
-      id <- buildTargets.inverseSources(args.file)
+      id <- buildTargets.inverseSources(file)
     } yield {
       val params = new b.RunParams(id)
       val task = server.run(params)
-      register(args.file, task)
+      register(file, task)
       task.asScala
     }
 
