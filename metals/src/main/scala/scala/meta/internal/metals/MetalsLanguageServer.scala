@@ -481,7 +481,10 @@ class MetalsLanguageServer(
       val result = Future
         .sequence(
           List[Future[Unit]](
-            quickConnectToBuildServer().ignoreValue,
+            for {
+              _ <- quickConnectToBuildServer()
+              _ <- initializeCache() // after connecting since it requires buildServer
+            } yield (),
             slowConnectToBuildServer(forceImport = false).ignoreValue,
             Future(workspaceSymbols.indexClasspath()),
             Future(startHttpServer()),
@@ -971,9 +974,6 @@ class MetalsLanguageServer(
       case DebugCommands.startSession =>
         scribe.info("Starting debug session")
         Future.successful(ScalaDebugAdapter.create(codeRunner)).asJavaObject
-      case CancelCommand(command) =>
-        val noLongerRunning = codeRunner.cancel(command)
-        Future.successful(noLongerRunning).asJavaObject
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject
@@ -1489,6 +1489,11 @@ class MetalsLanguageServer(
       case NonFatal(e) =>
         scribe.error("unexpected error during source scanning", e)
     })
+  }
+
+  private def initializeCache(): Future[Unit] = {
+    val targets = buildTargets.all.map(_.info.getId).toList.asJava
+    postCompileCache.initialize(targets).asScala.ignoreValue
   }
 
 }

@@ -133,7 +133,7 @@ final class ForwardingMetalsBuildClient(
             scribe.info(s"time: compiled $name in ${compilation.timer}")
           }
           if (isSuccess && (!cache.isInitialized || !compilation.isNoOp)) {
-            cache.afterCompiled(target)
+            cache.initialize(target)
           }
           if (isSuccess) {
             if (hasReportedError.contains(target)) {

@@ -1,6 +1,7 @@
 package scala.meta.internal.metals
 
 import java.util.Collections.singletonList
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import ch.epfl.scala.{bsp4j => b}
@@ -13,25 +14,30 @@ final class PostCompileCache(buildServer: () => Option[BuildServerConnection]) {
 
   def isInitialized: Boolean = initialized.get()
 
-  def afterCompiled(target: b.BuildTargetIdentifier): Unit = {
-    scribe.info(s">> Populating cache after ${target.getUri}")
+  def initialize(target: b.BuildTargetIdentifier): CompletableFuture[Void] =
+    initialize(singletonList(target))
+
+  def initialize(
+      targets: java.util.List[b.BuildTargetIdentifier]
+  ): CompletableFuture[Void] = {
+    scribe.info(s">> Populating cache after ${targets.asScala.map(_.getUri)}")
     clear()
 
     buildServer() match {
       case Some(connection) =>
-        val parameters = new b.ScalaMainClassesParams(singletonList(target))
-        connection
+        val parameters = new b.ScalaMainClassesParams(targets)
+        val task = connection
           .mainClasses(parameters)
           .thenAccept(initializeMainClasses)
           .thenRun { () =>
             scribe.info(s""">> Cache populated: 
-                           |mainClasses: ${mainClasses.keySet()}
-                           |""".stripMargin)
+mainClasses: ${mainClasses.keySet()}
+""".stripMargin)
           }
-
         initialized.set(true)
+        task
       case None =>
-        scribe.info(">> No connection")
+        CompletableFuture.completedFuture(null)
     }
   }
 
