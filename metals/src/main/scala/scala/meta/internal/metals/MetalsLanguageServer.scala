@@ -35,11 +35,11 @@ import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.concurrent.TimeoutException
 import scala.meta.internal.debug.DebugCommands
-import scala.meta.internal.debug.ScalaDebugAdapter
+import scala.meta.internal.debug.ScalaDebugServer
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.BuildTool.Sbt
-import scala.meta.internal.metals.CodeLensCommands.RunCodeArgs
 import scala.meta.internal.metals.MetalsEnrichments._
+import scala.meta.internal.metals.debug.MetalsDebugAdapter
 import scala.meta.internal.mtags._
 import scala.meta.internal.semanticdb.Scala._
 import scala.meta.io.AbsolutePath
@@ -972,12 +972,8 @@ class MetalsLanguageServer(
         }.asJavaObject
       case DebugCommands.startSession =>
         scribe.info("Starting debug session")
-        Future
-          .successful(
-            ScalaDebugAdapter
-              .create(buildTargets, buildServerConnectionProvider)
-          )
-          .asJavaObject
+        val debugAdapter = MetalsDebugAdapter(buildTargets)
+        ScalaDebugServer.launch(debugAdapter).asJavaObject
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject
