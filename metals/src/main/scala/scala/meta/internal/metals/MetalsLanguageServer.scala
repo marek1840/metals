@@ -109,8 +109,6 @@ class MetalsLanguageServer(
     new DelegatingLanguageClient(NoopLanguageClient, config)
   var userConfig = UserConfiguration()
   val buildTargets: BuildTargets = new BuildTargets()
-  private val codeRunner =
-    new CodeRunner(() => buildServer, buildTargets, languageClient)
   private val fileWatcher = register(
     new FileWatcher(
       buildTargets,
@@ -128,6 +126,7 @@ class MetalsLanguageServer(
   private var fileSystemSemanticdbs: FileSystemSemanticdbs = _
   private var interactiveSemanticdbs: InteractiveSemanticdbs = _
   private var buildTools: BuildTools = _
+  private var buildServerConnectionProvider: BuildServerConnectionProvider = _
   private var semanticdbs: Semanticdbs = _
   private var buildClient: ForwardingMetalsBuildClient = _
   private var bloopServers: BloopServers = _
@@ -237,7 +236,6 @@ class MetalsLanguageServer(
     bloopServers = new BloopServers(
       sh,
       workspace,
-      buildClient,
       config,
       config.icons,
       embedded,
@@ -247,10 +245,11 @@ class MetalsLanguageServer(
       workspace,
       charset,
       languageClient,
-      buildClient,
       tables,
       bspGlobalDirectories
     )
+    buildServerConnectionProvider =
+      new BuildServerConnectionProvider(buildTools, bloopServers, bspServers)
     semanticdbs = AggregateSemanticdbs(
       List(
         fileSystemSemanticdbs,
@@ -973,7 +972,12 @@ class MetalsLanguageServer(
         }.asJavaObject
       case DebugCommands.startSession =>
         scribe.info("Starting debug session")
-        Future.successful(ScalaDebugAdapter.create(codeRunner)).asJavaObject
+        Future
+          .successful(
+            ScalaDebugAdapter
+              .create(buildTargets, buildServerConnectionProvider)
+          )
+          .asJavaObject
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject
@@ -1068,8 +1072,7 @@ class MetalsLanguageServer(
         case None => Future.successful(())
       }
       maybeBuild <- timed("connected to build server") {
-        if (buildTools.isBloop) bloopServers.newServer()
-        else bspServers.newServer()
+        buildServerConnectionProvider.openConnection(buildClient)
       }
       result <- maybeBuild match {
         case Some(build) =>

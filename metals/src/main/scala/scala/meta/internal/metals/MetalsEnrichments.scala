@@ -33,6 +33,7 @@ import scala.meta.internal.{semanticdb => s}
 import scala.meta.io.AbsolutePath
 import scala.meta.tokens.Token
 import scala.util.Properties
+import scala.util.Try
 import scala.{meta => m}
 
 /**
@@ -112,6 +113,14 @@ object MetalsEnrichments
 
   implicit class XtensionJavaFuture[T](future: CompletionStage[T]) {
     def asScala: Future[T] = FutureConverters.toScala(future)
+  }
+
+  implicit class XtensionCompletableFuture[T](future: CompletableFuture[T]) {
+    def asCancelable: Cancelable =
+      Cancelable(
+        () =>
+          Try(future.completeExceptionally(new ControlCancellationException()))
+      )
   }
 
   implicit class XtensionScalaFuture[A](future: Future[A]) {

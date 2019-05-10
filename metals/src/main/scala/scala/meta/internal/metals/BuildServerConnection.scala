@@ -1,5 +1,10 @@
 package scala.meta.internal.metals
 
+import java.util.Collections
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import ch.epfl.scala.bsp4j.BuildClientCapabilities
 import ch.epfl.scala.bsp4j.CompileParams
 import ch.epfl.scala.bsp4j.CompileResult
@@ -7,67 +12,28 @@ import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.InitializeBuildResult
 import ch.epfl.scala.bsp4j.RunParams
 import ch.epfl.scala.bsp4j.RunResult
-import java.io.InputStream
-import java.io.OutputStream
-import java.util.Collections
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
-import java.util.concurrent.atomic.AtomicBoolean
 import ch.epfl.scala.bsp4j.ScalaMainClassesParams
 import ch.epfl.scala.bsp4j.ScalaMainClassesResult
-import org.eclipse.lsp4j.jsonrpc.Launcher
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
-import scala.meta.io.AbsolutePath
-import scala.util.Try
+import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.pc.InterruptException
+import scala.meta.internal.rpc.RPC
+import scala.meta.io.AbsolutePath
 
 /**
  * An actively running and initialized BSP connection.
  */
-case class BuildServerConnection(
-    workspace: AbsolutePath,
-    client: MetalsBuildClient,
-    server: MetalsBuildServer,
-    cancelables: List[Cancelable],
-    initializeResult: InitializeBuildResult,
-    name: String
+final class BuildServerConnection(
+    val server: MetalsBuildServer,
+    val name: String,
+    displayName: String,
+    requests: MutableCancelable
 )(implicit ec: ExecutionContext)
     extends Cancelable {
 
-  private val ongoingRequests = new MutableCancelable().addAll(cancelables)
-
-  /** Run build/shutdown procedure */
-  def shutdown(): Future[Unit] = Future {
-    try {
-      server.buildShutdown().get(2, TimeUnit.SECONDS)
-      server.onBuildExit()
-      // Cancel pending compilations on our side, this is not needed for Bloop.
-      cancel()
-    } catch {
-      case e: TimeoutException =>
-        scribe.error(
-          s"timeout: build server '${initializeResult.getDisplayName}' during shutdown"
-        )
-      case InterruptException() =>
-      case e: Throwable =>
-        scribe.error(
-          s"build shutdown: ${initializeResult.getDisplayName()}",
-          e
-        )
-    }
-  }
-
-  private def register[T](e: CompletableFuture[T]): CompletableFuture[T] = {
-    ongoingRequests.add(
-      Cancelable(
-        () => Try(e.completeExceptionally(new ControlCancellationException()))
-      )
-    )
-    e
-  }
+  private val cancelled = new AtomicBoolean(false)
 
   def compile(params: CompileParams): CompletableFuture[CompileResult] = {
     register(server.buildTargetCompile(params))
@@ -83,13 +49,34 @@ case class BuildServerConnection(
     register(server.buildTargetScalaMainClasses(params))
   }
 
-  private val cancelled = new AtomicBoolean(false)
-  override def cancel(): Unit = {
-    if (cancelled.compareAndSet(false, true)) {
-      ongoingRequests.cancel()
+  /** Run build/shutdown procedure */
+  def shutdown(): Future[Unit] = Future {
+    try {
+      server.buildShutdown().get(2, TimeUnit.SECONDS)
+      server.onBuildExit()
+      // Cancel pending compilations on our side, this is not needed for Bloop.
+      cancel()
+    } catch {
+      case _: TimeoutException =>
+        scribe.error(s"timeout: build server '$displayName' during shutdown")
+      case InterruptException() =>
+      case e: Throwable =>
+        scribe.error(s"build shutdown: $displayName", e)
     }
   }
 
+  override def cancel(): Unit = {
+    if (cancelled.compareAndSet(false, true)) {
+      requests.cancel()
+    }
+  }
+
+  private def register[T](
+      future: CompletableFuture[T]
+  ): CompletableFuture[T] = {
+    requests.add(future.asCancelable)
+    future
+  }
 }
 
 object BuildServerConnection {
@@ -101,36 +88,31 @@ object BuildServerConnection {
    * doesn't complete within a few seconds then something is wrong. We want to fail fast
    * when initialization is not successful.
    */
-  def fromStreams(
+  def apply(
+      name: String,
       workspace: AbsolutePath,
-      localClient: MetalsBuildClient,
-      output: OutputStream,
-      input: InputStream,
-      onShutdown: List[Cancelable],
-      name: String
-  )(implicit ec: ExecutionContextExecutorService): BuildServerConnection = {
-    val tracePrinter = GlobalTrace.setupTracePrinter("BSP")
-    val launcher = new Launcher.Builder[MetalsBuildServer]()
-      .traceMessages(tracePrinter)
-      .setOutput(output)
-      .setInput(input)
-      .setLocalService(localClient)
-      .setRemoteInterface(classOf[MetalsBuildServer])
-      .setExecutorService(ec)
-      .create()
-    val listening = launcher.startListening()
-    val server = launcher.getRemoteProxy
-    val result = BuildServerConnection.initialize(workspace, server)
-    val stopListening =
-      Cancelable(() => listening.cancel(false))
-    BuildServerConnection(
-      workspace,
-      localClient,
-      server,
-      stopListening :: onShutdown,
-      result,
-      name
-    )
+      localClient: AnyRef,
+      io: RPC.IO,
+      cancelable: Cancelable
+  )(
+      implicit ec: ExecutionContextExecutorService
+  ): BuildServerConnection = {
+    val connection = RPC.connect(classOf[MetalsBuildServer], localClient, io) {
+      builder =>
+        val tracePrinter = GlobalTrace.setupTracePrinter("BSP")
+        builder.traceMessages(tracePrinter)
+    }
+
+    val server = connection.remote
+
+    val handshake = initialize(workspace, server)
+    val displayName = handshake.getDisplayName
+
+    val requests = new MutableCancelable()
+      .add(connection)
+      .add(connection)
+
+    new BuildServerConnection(server, name, displayName, requests)
   }
 
   /** Run build/initialize handshake */

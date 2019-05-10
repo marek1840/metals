@@ -14,6 +14,7 @@ import scala.meta.internal.io.PathIO
 import scala.meta.internal.metals.Messages.BspSwitch
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.mtags.MD5
+import scala.meta.internal.rpc.RPC
 import scala.meta.io.AbsolutePath
 import scala.util.Try
 
@@ -26,13 +27,12 @@ final class BspServers(
     workspace: AbsolutePath,
     charset: Charset,
     client: MetalsLanguageClient,
-    buildClient: MetalsBuildClient,
     tables: Tables,
     bspGlobalInstallDirectories: List[AbsolutePath]
 )(implicit ec: ExecutionContextExecutorService) {
 
-  def newServer(): Future[Option[BuildServerConnection]] = {
-    findServer().map(_.map(newServer))
+  def newServer(listener: AnyRef): Future[Option[BuildServerConnection]] = {
+    findServer().map(_.map(details => newServer(listener, details)))
   }
 
   /** Runs "Switch build server" command, returns true if build server was changed */
@@ -51,6 +51,7 @@ final class BspServers(
   }
 
   private def newServer(
+      listener: AnyRef,
       details: BspConnectionDetails
   ): BuildServerConnection = {
     val process = new ProcessBuilder(details.getArgv)
@@ -66,15 +67,12 @@ final class BspServers(
       s"${details.getName} input stream"
     )
 
-    BuildServerConnection.fromStreams(
+    BuildServerConnection(
+      details.getName,
       workspace,
-      buildClient,
-      output,
-      input,
-      List(
-        Cancelable(() => process.destroy())
-      ),
-      details.getName
+      listener,
+      RPC.IO(input, output),
+      Cancelable(() => process.destroy())
     )
   }
 

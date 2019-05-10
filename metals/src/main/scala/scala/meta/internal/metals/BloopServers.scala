@@ -17,6 +17,7 @@ import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.meta.internal.metals.MetalsEnrichments._
+import scala.meta.internal.rpc.RPC
 import scala.meta.io.AbsolutePath
 import scala.sys.process.Process
 import scala.sys.process.ProcessLogger
@@ -44,7 +45,6 @@ import scala.util.Try
 final class BloopServers(
     sh: ScheduledExecutorService,
     workspace: AbsolutePath,
-    client: MetalsBuildClient,
     config: MetalsServerConfig,
     icons: Icons,
     embedded: Embedded,
@@ -52,12 +52,13 @@ final class BloopServers(
 )(implicit ec: ExecutionContextExecutorService) {
 
   def newServer(
+      listener: AnyRef,
       maxRetries: Int = defaultRetries
   ): Future[Option[BuildServerConnection]] = {
-    newServerUnsafe().map(Option(_)).recoverWith {
+    newServerUnsafe(listener).map(Option(_)).recoverWith {
       case NonFatal(_) if maxRetries > 0 =>
         scribe.warn(s"BSP retry ${defaultRetries - maxRetries + 1}")
-        newServer(maxRetries - 1)
+        newServer(listener, maxRetries - 1)
     }
   }
 
@@ -68,22 +69,26 @@ final class BloopServers(
       2
     }
 
-  private def newServerUnsafe(): Future[BuildServerConnection] = {
+  private def newServerUnsafe(
+      listener: AnyRef
+  ): Future[BuildServerConnection] = {
     for {
       (protocol, cancelable) <- callBSP()
     } yield {
-      BuildServerConnection.fromStreams(
+      BuildServerConnection(
+        "Bloop",
         workspace,
-        client,
-        protocol.output,
-        protocol.input,
-        List(
-          Cancelable(() => protocol.cancel()),
-          cancelable
-        ),
-        "Bloop"
+        listener,
+        RPC.IO(protocol.input, protocol.output),
+        protocol
       )
     }
+  }
+
+  private def callBSP(): Future[(BloopSocket, Cancelable)] = {
+    if (config.bloopProtocol.isNamedPipe) callNamedPipeBsp()
+    else if (config.bloopProtocol.isTcp) callTcpBsp()
+    else callUnixBsp()
   }
 
   // Returns a random free port.
@@ -99,12 +104,6 @@ final class BloopServers(
   private def bspCommand: Array[String] = {
     if (config.isVerbose) Array("bsp", "--verbose")
     else Array("bsp")
-  }
-
-  private def callBSP(): Future[(BloopSocket, Cancelable)] = {
-    if (config.bloopProtocol.isNamedPipe) callNamedPipeBsp()
-    else if (config.bloopProtocol.isTcp) callTcpBsp()
-    else callUnixBsp()
   }
 
   private def callNamedPipeBsp(): Future[(BloopSocket, Cancelable)] = {

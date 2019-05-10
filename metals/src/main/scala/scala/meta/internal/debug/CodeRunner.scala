@@ -1,24 +1,22 @@
-package scala.meta.internal.metals
+package scala.meta.internal.debug
 
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
 import ch.epfl.scala.{bsp4j => b}
-import org.eclipse.{lsp4j => l}
+import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import scala.concurrent.Future
-import scala.meta.internal.metals.CodeLensCommands.RunCodeArgs
+import scala.meta.internal.metals.BuildServerConnection
+import scala.meta.internal.metals.BuildServerConnectionProvider
+import scala.meta.internal.metals.BuildTargets
 import scala.meta.internal.metals.MetalsEnrichments._
+import scala.meta.internal.metals.MetalsLanguageClient
 import scala.meta.io.AbsolutePath
 
 final class CodeRunner(
-    buildServer: () => Option[BuildServerConnection],
-    buildTargets: BuildTargets,
-    languageClient: MetalsLanguageClient
+    buildServer: Option[BuildServerConnection],
+    buildTargets: BuildTargets
 ) {
   def run(file: AbsolutePath): Future[b.RunResult] = {
     val task = for {
-      server <- buildServer()
+      server <- buildServer
       id <- buildTargets.inverseSources(file)
     } yield {
       val params = new b.RunParams(id)

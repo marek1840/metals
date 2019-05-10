@@ -7,11 +7,13 @@ import ch.epfl.scala.{bsp4j => bsp}
 import org.eclipse.lsp4j.debug
 import org.eclipse.lsp4j.debug.TerminatedEventArguments
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
+import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.debug.DebugLauncher
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scala.meta.internal.metals.CodeRunner
+import scala.meta.internal.metals.BuildServerConnectionProvider
+import scala.meta.internal.metals.BuildTargets
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.metals.Main
 
@@ -63,6 +65,23 @@ final class ScalaDebugAdapter(
 }
 
 object ScalaDebugAdapter {
+  def create(
+      buildTargets: BuildTargets,
+      connectionProvider: BuildServerConnectionProvider
+  )(implicit ex: ExecutionContext): java.lang.Integer = {
+    val server = createSocket()
+    val factory = new AdapterFactory(buildTargets, connectionProvider)
+
+    for {
+      client <- Future { server.accept() }
+      _ <- attach(factory, client)
+    } scribe.info(
+      s"Terminated debug adapter listening at ${server.getLocalSocketAddress}"
+    )
+
+    server.getLocalPort
+  }
+
   private def createSocket(): ServerSocket = {
     val serverSocket = new ServerSocket(0)
     Runtime.getRuntime.addShutdownHook(new Thread(() => {
@@ -72,13 +91,26 @@ object ScalaDebugAdapter {
   }
 
   private def attach(
-      factory: IDebugProtocolClient => ScalaDebugAdapter,
+      adapterFactory: AdapterFactory,
       clientSocket: Socket
-  )(implicit ex: ExecutionContext): util.concurrent.Future[Void] = {
+  )(implicit ex: ExecutionContext): Future[Unit] = {
     val client = new DelegatingDebugClient
-    val adapter = factory(client)
 
-    val launcher = new DebugLauncher.Builder[IDebugProtocolClient]()
+    for {
+      adapter <- adapterFactory.create(client)
+      launcher = createLauncher(adapter, clientSocket)
+      _ <- {
+        client.underlying = launcher.getRemoteProxy
+        Future { launcher.startListening().get() }
+      }
+    } yield ()
+  }
+
+  private def createLauncher(
+      adapter: ScalaDebugAdapter,
+      clientSocket: Socket
+  ): Launcher[IDebugProtocolClient] =
+    new DebugLauncher.Builder[IDebugProtocolClient]()
       .setLocalService(adapter)
       .setInput(clientSocket.getInputStream)
       .setOutput(clientSocket.getOutputStream)
@@ -86,25 +118,17 @@ object ScalaDebugAdapter {
       .setExecutorService(Main.exec)
       .create()
 
-    client.underlying = launcher.getRemoteProxy
-    launcher.startListening()
-  }
-
-  def create(
-      codeRunner: CodeRunner
-  )(implicit ex: ExecutionContext): java.lang.Integer = {
-    val server = createSocket()
-
-    val factory: IDebugProtocolClient => ScalaDebugAdapter =
-      client => new ScalaDebugAdapter(codeRunner, client)
-
-    for {
-      client <- Future { server.accept() }
-      _ = attach(factory, client).get()
-    } scribe.info(
-      s"Terminated debug adapter listening at ${server.getLocalSocketAddress}"
-    )
-
-    server.getLocalPort
+  final class AdapterFactory(
+      buildTargets: BuildTargets,
+      connectionProvider: BuildServerConnectionProvider
+  )(implicit val ec: ExecutionContext) {
+    def create(client: IDebugProtocolClient): Future[ScalaDebugAdapter] = {
+      val listener = new BuildServerListener(client)
+      for {
+        connection <- connectionProvider.openConnection(listener)
+        if connection.isDefined
+        codeRunner = new CodeRunner(connection, buildTargets)
+      } yield new ScalaDebugAdapter(codeRunner, client)
+    }
   }
 }
