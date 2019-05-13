@@ -11,24 +11,11 @@ import scala.meta.metals.Main
 object ScalaDebugServer {
   def launch(
       adapter: DebugAdapter
-  )(implicit ec: ExecutionContext): Future[java.lang.Integer] = {
-    for {
-      _ <- validate()
-      server = createSocket()
-      _ = startListening(server, adapter)
-    } yield server.getLocalPort
+  )(implicit ec: ExecutionContext): java.lang.Integer = {
+    val server = createSocket()
+    startListening(server, adapter)
+    server.getLocalPort
   }
-
-  private def validate()(implicit ec: ExecutionContext): Future[Unit] =
-    try {
-      Class.forName("com.sun.jdi.VirtualMachine")
-      Future.successful(())
-    } catch {
-      case _: ClassNotFoundException =>
-        val message = "Could not find: JVM Tool Interface."
-        // TODO Future.failed(new IllegalStateException(message))
-        Future.successful(())
-    }
 
   private def createSocket(): ServerSocket = {
     val serverSocket = new ServerSocket(0)

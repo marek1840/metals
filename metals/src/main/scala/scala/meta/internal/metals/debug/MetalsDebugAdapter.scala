@@ -43,6 +43,6 @@ object MetalsDebugAdapter {
   )(implicit ec: ExecutionContext): MetalsDebugAdapter = {
     val launchArgsAdapter = new LaunchArgsAdapter(buildTargets)
 
-    new MetalsDebugAdapter(new ScalaDebugAdapter, launchArgsAdapter)
+    new MetalsDebugAdapter(new ScalaDebugAdapter(), launchArgsAdapter)
   }
 }

@@ -973,7 +973,8 @@ class MetalsLanguageServer(
       case DebugCommands.startSession =>
         scribe.info("Starting debug session")
         val debugAdapter = MetalsDebugAdapter(buildTargets)
-        ScalaDebugServer.launch(debugAdapter).asJavaObject
+        val port = ScalaDebugServer.launch(debugAdapter)
+        Future(port).asJavaObject
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject

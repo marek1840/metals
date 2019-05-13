@@ -12,7 +12,7 @@ final class LaunchArgsAdapter(buildTargets: BuildTargets) {
     for {
       buildTarget <- buildTargets.inverseSources(args.file.toAbsolutePath)
       classpath = classpathOf(buildTarget)
-    } yield debug.LaunchParameters(args.mainClass, classpath)
+    } yield debug.LaunchParameters(args.mainClass, classpath, args.noDebug)
   }
 
   private def classpathOf(buildTarget: BuildTargetIdentifier): Array[String] =
