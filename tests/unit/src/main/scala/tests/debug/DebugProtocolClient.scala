@@ -1,9 +1,8 @@
 package tests.debug
 import org.eclipse.lsp4j.debug.OutputEventArguments
-import org.eclipse.lsp4j.debug.OutputEventArgumentsCategory
+import org.eclipse.lsp4j.debug.OutputEventArgumentsCategory._
 import org.eclipse.lsp4j.debug.TerminatedEventArguments
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
-import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
 import scala.concurrent.Future
 import scala.concurrent.Promise
 
@@ -29,14 +28,12 @@ protected[debug] final class DebugProtocolClient extends IDebugProtocolClient {
 
     private[DebugProtocolClient] def append(args: OutputEventArguments): Unit =
       args.getCategory match {
-        case OutputEventArgumentsCategory.STDOUT =>
+        case STDOUT =>
           outBuffer.append(args.getOutput)
-        case OutputEventArgumentsCategory.STDERR =>
+        case STDERR =>
           errBuffer.append(args.getOutput)
         case category =>
-          throw new IllegalStateException(
-            "Unsupported output category: " + category
-          )
+          throw new IllegalStateException(s"Unsupported output: $category")
       }
   }
 }

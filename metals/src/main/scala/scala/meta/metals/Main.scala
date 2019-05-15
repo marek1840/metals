@@ -1,7 +1,6 @@
 package scala.meta.metals
 
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import scala.concurrent.ExecutionContext
@@ -13,12 +12,11 @@ import scala.meta.internal.metals.ConfiguredLanguageClient
 import scala.util.control.NonFatal
 
 object Main {
-  val exec: ExecutorService = Executors.newCachedThreadPool()
-
   def main(args: Array[String]): Unit = {
     val systemIn = System.in
     val systemOut = System.out
     val tracePrinter = GlobalTrace.setup("LSP")
+    val exec = Executors.newCachedThreadPool()
     val ec = ExecutionContext.fromExecutorService(exec)
     val config = MetalsServerConfig.default
     val server = new MetalsLanguageServer(

@@ -1,17 +1,17 @@
 package scala.meta.internal.debug
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ExecutorService
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.debug.DebugLauncher
-import scala.concurrent.ExecutionContext
+import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
-import scala.meta.metals.Main
 
 object JvmDebugServer {
   def launch(
       adapter: DebugAdapter
-  )(implicit ec: ExecutionContext): java.lang.Integer = {
+  )(implicit ec: ExecutionContextExecutorService): java.lang.Integer = {
     val server = createSocket()
     startListening(server, adapter)
     server.getLocalPort
@@ -26,7 +26,7 @@ object JvmDebugServer {
   }
 
   private def startListening(server: ServerSocket, adapter: DebugAdapter)(
-      implicit ec: ExecutionContext
+      implicit ec: ExecutionContextExecutorService
   ): Unit = {
     for {
       client <- Future { server.accept() }
@@ -34,7 +34,7 @@ object JvmDebugServer {
   }
 
   private def launch(clientSocket: Socket, adapter: DebugAdapter)(
-      implicit ec: ExecutionContext
+      implicit ec: ExecutionContextExecutorService
   ): Future[Unit] = {
     val launcher = createLauncher(adapter, clientSocket)
     adapter.setClient(launcher.getRemoteProxy)
@@ -45,12 +45,12 @@ object JvmDebugServer {
   private def createLauncher(
       adapter: AnyRef,
       clientSocket: Socket
-  ): Launcher[IDebugProtocolClient] =
+  )(implicit executorService: ExecutorService): Launcher[IDebugProtocolClient] =
     new DebugLauncher.Builder[IDebugProtocolClient]()
       .setLocalService(adapter)
       .setInput(clientSocket.getInputStream)
       .setOutput(clientSocket.getOutputStream)
       .setRemoteInterface(classOf[IDebugProtocolClient])
-      .setExecutorService(Main.exec)
+      .setExecutorService(executorService)
       .create()
 }
