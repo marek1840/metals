@@ -278,14 +278,13 @@ final class TestingServer(
   def toPath(filename: String): AbsolutePath =
     TestingServer.toPath(workspace, filename)
 
-  def executeCommand(command: String): Future[Unit] = {
+  def executeCommand(command: String): Future[Object] = {
     Debug.printEnclosing()
     server
       .executeCommand(
         new ExecuteCommandParams(command, Collections.emptyList())
       )
       .asScala
-      .ignoreValue
   }
 
   def executeCodeLens[A](filename: String, command: Command[A]): Future[A] = {

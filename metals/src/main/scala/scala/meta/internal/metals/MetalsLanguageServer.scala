@@ -30,11 +30,11 @@ import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.concurrent.TimeoutException
-import scala.meta.internal.debug.DebugCommands
 import scala.meta.internal.debug.JvmDebugServer
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.BuildTool.Sbt
 import scala.meta.internal.metals.MetalsEnrichments._
+import scala.meta.internal.metals.debug.DebugCommands
 import scala.meta.internal.metals.debug.MetalsDebugAdapter
 import scala.meta.internal.mtags._
 import scala.meta.internal.semanticdb.Scala._

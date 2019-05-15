@@ -1,4 +1,4 @@
-package scala.meta.internal.debug
+package scala.meta.internal.metals.debug
 
 object DebugCommands {
   val startSession = "metals.scala.debug.session.start"
