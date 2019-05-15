@@ -1,6 +1,8 @@
 package scala.meta.internal.debug
 
 import java.io.File
+import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Paths
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import scala.concurrent.ExecutionContext
@@ -13,7 +15,10 @@ import scala.sys.process.ProcessLogger
 final class DebugSession(
     process: Process,
     val exitCode: Future[Int]
-)
+) {
+  def whenTerminated[A](f: Int => A)(implicit ec: ExecutionContext): Future[A] =
+    exitCode.map(f)
+}
 
 final class DebugSessionFactory(client: IDebugProtocolClient) {
   def createCommand(params: LaunchParameters): Array[String] = {
@@ -31,12 +36,23 @@ final class DebugSessionFactory(client: IDebugProtocolClient) {
       params: LaunchParameters
   )(implicit ec: ExecutionContext): DebugSession = {
     val command = createCommand(params)
+    val workingDir = createWorkingDir(params)
     val listener = new Listener()
 
-    val process = Process(command).run(listener)
+    val process = Process(command, workingDir).run(listener)
 
     val exitCode = Future(process.exitValue())
     new DebugSession(process, exitCode)
+  }
+
+  private def createWorkingDir(params: LaunchParameters): File = {
+    if (params.cwd == null) null
+    else {
+      val uri = URI.create(params.cwd).getPath
+      val path = Paths.get(uri)
+      if (Files.isDirectory(path)) path.toFile
+      else null
+    }
   }
 
   private class Listener extends ProcessLogger {

@@ -532,4 +532,12 @@ object MetalsEnrichments
       trailingTokens.find(predicate)
   }
 
+  final implicit class XtensionScalaOption[A](option: Option[A]) {
+    def getOrThrow(e: => Exception): A = {
+      option match {
+        case Some(value) => value
+        case _ => throw e
+      }
+    }
+  }
 }

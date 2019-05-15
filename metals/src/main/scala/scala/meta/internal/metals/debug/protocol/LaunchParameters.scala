@@ -1,7 +1,7 @@
 package scala.meta.internal.metals.debug.protocol
 
 final case class LaunchParameters(
+    cwd: String,
     mainClass: String,
-    file: String,
-    noDebug: java.lang.Boolean
+    file: String
 )

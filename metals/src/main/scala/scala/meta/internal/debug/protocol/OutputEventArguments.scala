@@ -4,6 +4,14 @@ import org.eclipse.lsp4j.debug
 import org.eclipse.lsp4j.debug.{OutputEventArgumentsCategory => Category}
 
 object OutputEventArguments {
+  def stdout(message: String): debug.OutputEventArguments = {
+    apply(Category.STDOUT, message)
+  }
+
+  def stderr(message: String): debug.OutputEventArguments = {
+    apply(Category.STDERR, message)
+  }
+
   private def apply(
       category: String,
       message: String
@@ -13,13 +21,4 @@ object OutputEventArguments {
     output.setOutput(message)
     output
   }
-
-  def stdout(message: String): debug.OutputEventArguments = {
-    apply(Category.STDOUT, message)
-  }
-
-  def stderr(message: String): debug.OutputEventArguments = {
-    apply(Category.STDERR, message)
-  }
-
 }

@@ -1,7 +1,7 @@
 package scala.meta.internal.debug.protocol
 
 final case class LaunchParameters(
+    cwd: String,
     mainClass: String,
-    classpath: Array[String],
-    noDebug: java.lang.Boolean
+    classpath: Array[String]
 )

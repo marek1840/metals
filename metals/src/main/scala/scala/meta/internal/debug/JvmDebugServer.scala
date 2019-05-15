@@ -8,7 +8,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.meta.metals.Main
 
-object ScalaDebugServer {
+object JvmDebugServer {
   def launch(
       adapter: DebugAdapter
   )(implicit ec: ExecutionContext): java.lang.Integer = {
