@@ -1,7 +1,7 @@
 package scala.meta.internal.metals.debug
 
 import java.util.concurrent.CompletableFuture
-import ch.epfl.scala.{bsp4j => bsp}
+import ch.epfl.scala.{bsp4j => b}
 import org.eclipse.lsp4j.debug.Capabilities
 import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
@@ -44,7 +44,7 @@ class MetalsDebugAdapter(
 
 object MetalsDebugAdapter {
   def apply(
-      compile: Seq[AbsolutePath] => Future[bsp.CompileResult],
+      compile: Seq[AbsolutePath] => Future[b.CompileResult],
       buildTargets: BuildTargets
   )(implicit ec: ExecutionContext): MetalsDebugAdapter = {
     val launchArgsAdapter = new LaunchArgsAdapter(compile, buildTargets)
