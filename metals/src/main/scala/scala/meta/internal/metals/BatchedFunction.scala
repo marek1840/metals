@@ -119,4 +119,10 @@ object BatchedFunction {
       dummy: DummyImplicit
   ): BatchedFunction[A, B] =
     new BatchedFunction(fn.andThen(CancelableFuture(_)))
+
+  def fromFunction[A, B](
+      fn: Seq[A] => B
+  )(implicit ec: ExecutionContext): BatchedFunction[A, B] = {
+    fromFuture(seq => Future(fn(seq)))
+  }
 }

@@ -1,13 +1,17 @@
 package scala.meta.internal.metals
+import java.util.concurrent.atomic.AtomicBoolean
+
 import ch.epfl.scala.{bsp4j => b}
+
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.concurrent.Promise
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.io.AbsolutePath
-import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 
 final class Compilations(
+    languageClient: MetalsLanguageClient,
     buildTargets: BuildTargets,
     classes: BuildTargetClasses,
     workspace: () => AbsolutePath,
@@ -21,7 +25,8 @@ final class Compilations(
     new BatchedFunction[b.BuildTargetIdentifier, b.CompileResult](compile)
   def pauseables: List[Pauseable] = List(compileBatch, cascadeBatch)
 
-  private val isCompiling = TrieMap.empty[b.BuildTargetIdentifier, Boolean]
+  private val isCompiling =
+    TrieMap.empty[b.BuildTargetIdentifier, Promise[Unit]]
   private var lastCompile: collection.Set[b.BuildTargetIdentifier] = Set.empty
 
   def currentlyCompiling: Iterable[b.BuildTargetIdentifier] = isCompiling.keys
@@ -33,7 +38,7 @@ final class Compilations(
     lastCompile.contains(buildTarget)
 
   def compileTargets(
-      targets: Seq[BuildTargetIdentifier]
+      targets: Seq[b.BuildTargetIdentifier]
   ): Future[b.CompileResult] = {
     compileBatch(targets)
   }
@@ -87,15 +92,13 @@ final class Compilations(
       targets: Seq[b.BuildTargetIdentifier]
   ): CancelableFuture[b.CompileResult] = {
     val params = new b.CompileParams(targets.asJava)
-    targets.foreach(target => isCompiling(target) = true)
     val compilation = connection.compile(params)
     val task = for {
       result <- compilation.asScala
-      _ <- {
+      _ <- Future {
+        isCompiling.values.foreach(_.success(()))
         lastCompile = isCompiling.keySet
         isCompiling.clear()
-        if (result.isOK) classes.onCompiled(targets)
-        else Future.successful(())
       }
     } yield result
 

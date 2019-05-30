@@ -78,6 +78,7 @@ object MetalsEnrichments
   implicit class XtensionCompileResult(result: b.CompileResult) {
     def isOK: Boolean = result.getStatusCode == b.StatusCode.OK
     def isError: Boolean = result.getStatusCode == b.StatusCode.ERROR
+    def isCancelled: Boolean = result.getStatusCode == b.StatusCode.CANCELLED
   }
 
   implicit class XtensionEditDistance(result: Either[EmptyResult, m.Position]) {

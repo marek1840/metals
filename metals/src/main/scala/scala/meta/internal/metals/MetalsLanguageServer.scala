@@ -113,6 +113,7 @@ class MetalsLanguageServer(
   var userConfig = UserConfiguration()
   val buildTargets: BuildTargets = new BuildTargets()
   val compilations: Compilations = new Compilations(
+    languageClient,
     buildTargets,
     buildTargetClasses,
     () => workspace,
@@ -236,6 +237,7 @@ class MetalsLanguageServer(
       languageClient,
       diagnostics,
       buildTargets,
+      buildTargetClasses,
       config,
       statusBar,
       time,
@@ -403,6 +405,7 @@ class MetalsLanguageServer(
         )
       )
       capabilities.setFoldingRangeProvider(true)
+      capabilities.setCodeLensProvider(new CodeLensOptions(false))
       capabilities.setDefinitionProvider(true)
       capabilities.setHoverProvider(true)
       capabilities.setReferencesProvider(true)
@@ -661,6 +664,11 @@ class MetalsLanguageServer(
       case None => CompletableFuture.completedFuture(())
       case Some(change) =>
         val path = params.getTextDocument.getUri.toAbsolutePath
+
+        buildTargets.inverseSources(path).foreach { target =>
+          buildTargetClasses.onStartedCompilation(target)
+        }
+
         buffers.put(path, change.getText)
         diagnostics.didChange(path)
         parseTrees(path).asJava
@@ -953,9 +961,9 @@ class MetalsLanguageServer(
   def codeLens(
       params: CodeLensParams
   ): CompletableFuture[util.List[CodeLens]] =
-    CancelTokens { _ =>
-      scribe.warn("textDocument/codeLens is not supported.")
-      null
+    CancelTokens.future { token =>
+      codeLensProvider
+        .findLenses(params.getTextDocument.getUri.toAbsolutePath)
     }
 
   @JsonRequest("textDocument/foldingRange")
@@ -1061,6 +1069,27 @@ class MetalsLanguageServer(
             )
           )
         }.asJavaObject
+      case ServerCommands.OpenDebugSession() =>
+        val uri = params.getArguments.asScala.toList match {
+          case Nil =>
+            Future.failed(
+              new IllegalStateException("Launch parameters not specified")
+            )
+          case arg :: Nil =>
+            val uri = buildServer match {
+              case None =>
+                Future.failed(new IllegalStateException("No Build server"))
+              case Some(server) =>
+                server.startDebugSession(arg).asScala
+            }
+            uri
+          case args =>
+            val unexpected = args.drop(1)
+            Future.failed(
+              new IllegalStateException(s"Unexpected arguments: $unexpected")
+            )
+        }
+        uri.asJavaObject
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject
@@ -1424,6 +1453,7 @@ class MetalsLanguageServer(
         val directory = source.getUri.toAbsolutePath
         buildTargets.addSourceDirectory(directory, item.getTarget)
       }
+      buildTargets.whenFinishedIndexing()
       doctor.check()
     }
     timedThunk("started file watcher", config.statistics.isIndex) {

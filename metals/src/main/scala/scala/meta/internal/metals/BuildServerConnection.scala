@@ -2,6 +2,7 @@ package scala.meta.internal.metals
 
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.URI
 import java.util.Collections
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -14,6 +15,8 @@ import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.InitializeBuildResult
 import ch.epfl.scala.bsp4j.ScalaMainClassesParams
 import ch.epfl.scala.bsp4j.ScalaMainClassesResult
+import ch.epfl.scala.bsp4j.ScalaTestClassesParams
+import ch.epfl.scala.bsp4j.ScalaTestClassesResult
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutorService
@@ -74,9 +77,20 @@ case class BuildServerConnection(
   def mainClasses(
       params: ScalaMainClassesParams
   ): CompletableFuture[ScalaMainClassesResult] = {
-    // TODO use server.buildTargetScalaMainClasses when bloop releases version supporting mainClasses
-    CompletableFuture.completedFuture(
-      new ScalaMainClassesResult(Collections.emptyList())
+    register(server.buildTargetScalaMainClasses(params))
+  }
+
+  def testSuites(
+      params: ScalaTestClassesParams
+  ): CompletableFuture[ScalaTestClassesResult] = {
+    register(server.buildTargetScalaTestClasses(params))
+  }
+
+  def startDebugSession(launchParameters: Any): CompletableFuture[URI] = {
+    register(
+      server
+        .startDebugSession(launchParameters)
+        .thenApply(address => URI.create(address.getUri))
     )
   }
 

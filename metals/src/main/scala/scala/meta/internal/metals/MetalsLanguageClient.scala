@@ -1,11 +1,17 @@
 package scala.meta.internal.metals
 
+import java.util
+import java.util.Collections
 import java.util.concurrent.CompletableFuture
+
+import ch.epfl.scala.{bsp4j => b}
 import javax.annotation.Nullable
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageClient
+
+import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.tvp._
 
 trait MetalsLanguageClient extends LanguageClient with TreeViewClient {
@@ -45,8 +51,25 @@ trait MetalsLanguageClient extends LanguageClient with TreeViewClient {
       params: MetalsInputBoxParams
   ): CompletableFuture[MetalsInputBoxResult]
 
-  def shutdown(): Unit = {}
+  final def notifyCompilationStarted(
+      buildTargets: Seq[b.BuildTargetIdentifier]
+  ): Unit = {
+    val arguments = Collections.singletonList[Object](buildTargets.asJava)
+    val params =
+      new ExecuteCommandParams("metals-compilation-started", arguments)
+    metalsExecuteClientCommand(params)
+  }
 
+  final def notifyCompilationFinished(
+      buildTargets: Seq[b.BuildTargetIdentifier]
+  ): Unit = {
+    val arguments = Collections.singletonList[Object](buildTargets.asJava)
+    val params =
+      new ExecuteCommandParams("metals-compilation-finished", arguments)
+    metalsExecuteClientCommand(params)
+  }
+
+  def shutdown(): Unit = {}
 }
 
 /**
