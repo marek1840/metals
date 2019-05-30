@@ -10,10 +10,12 @@ import ch.epfl.scala.{bsp4j => b}
 import com.google.gson.JsonObject
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.{lsp4j => l}
+
 import scala.collection.concurrent.TrieMap
-import scala.concurrent.Promise
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.tvp._
 
@@ -24,12 +26,14 @@ final class ForwardingMetalsBuildClient(
     languageClient: MetalsLanguageClient,
     diagnostics: Diagnostics,
     buildTargets: BuildTargets,
+    buildTargetClasses: BuildTargetClasses,
     config: MetalsServerConfig,
     statusBar: StatusBar,
     time: Time,
     didCompile: CompileReport => Unit,
     treeViewProvider: () => TreeViewProvider
-) extends MetalsBuildClient
+)(implicit ec: ExecutionContext)
+    extends MetalsBuildClient
     with Cancelable {
 
   private case class Compilation(
@@ -45,6 +49,11 @@ final class ForwardingMetalsBuildClient(
   private val hasReportedError = Collections.newSetFromMap(
     new ConcurrentHashMap[BuildTargetIdentifier, java.lang.Boolean]()
   )
+
+  private val notifyStarted =
+    BatchedFunction.fromFunction(languageClient.notifyCompilationStarted)
+  private val notifyFinished =
+    BatchedFunction.fromFunction(languageClient.notifyCompilationFinished)
 
   def reset(): Unit = {
     cancel()
@@ -102,9 +111,13 @@ final class ForwardingMetalsBuildClient(
           val name = info.getDisplayName
           val promise = Promise[CompileReport]()
           val isNoOp = params.getMessage.startsWith("Start no-op compilation")
+          if (!isNoOp) {
+            buildTargetClasses.onStartedCompilation(task.getTarget)
+            notifyStarted(task.getTarget)
+          }
           val compilation = Compilation(new Timer(time), promise, isNoOp)
-
           compilations(task.getTarget) = compilation
+
           statusBar.trackFuture(
             s"Compiling $name",
             promise.future,
@@ -139,11 +152,13 @@ final class ForwardingMetalsBuildClient(
             scribe.info(s"time: compiled $name in ${compilation.timer}")
           }
           if (isSuccess) {
+            buildTargetClasses.onFinishedCompilation(target)
             if (hasReportedError.contains(target)) {
               // Only report success compilation if it fixes a previous compile error.
               statusBar.addMessage(message)
             }
             if (!compilation.isNoOp) {
+              notifyFinished(target) // note, there is no notification when compilation fails
               treeViewProvider().onBuildTargetDidCompile(report.getTarget())
             }
             hasReportedError.remove(target)

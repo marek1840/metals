@@ -1,13 +1,15 @@
 package scala.meta.internal.metals
+
 import ch.epfl.scala.{bsp4j => b}
+
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.io.AbsolutePath
-import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 
 final class Compilations(
+    languageClient: MetalsLanguageClient,
     buildTargets: BuildTargets,
     classes: BuildTargetClasses,
     workspace: () => AbsolutePath,
@@ -33,7 +35,7 @@ final class Compilations(
     lastCompile.contains(buildTarget)
 
   def compileTargets(
-      targets: Seq[BuildTargetIdentifier]
+      targets: Seq[b.BuildTargetIdentifier]
   ): Future[b.CompileResult] = {
     compileBatch(targets)
   }
@@ -91,11 +93,9 @@ final class Compilations(
     val compilation = connection.compile(params)
     val task = for {
       result <- compilation.asScala
-      _ <- {
+      _ <- Future {
         lastCompile = isCompiling.keySet
         isCompiling.clear()
-        if (result.isOK) classes.onCompiled(targets)
-        else Future.successful(())
       }
     } yield result
 

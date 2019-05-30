@@ -20,12 +20,16 @@ import scala.util.Try
 import scala.meta.internal.mtags.Mtags
 import scala.meta.internal.io.PathIO
 import java.net.URLClassLoader
+import java.util.concurrent.atomic.AtomicReference
+import scala.concurrent.Future
+import scala.concurrent.Promise
 import scala.util.control.NonFatal
 
 /**
  * In-memory cache for looking up build server metadata.
  */
 final class BuildTargets() {
+  private val indexing = new AtomicReference(Promise[Unit])
   private var workspace = PathIO.workingDirectory
   def setWorkspaceDirectory(newWorkspace: AbsolutePath): Unit = {
     workspace = newWorkspace
@@ -49,6 +53,10 @@ final class BuildTargets() {
   }
 
   def reset(): Unit = {
+    // first time
+    if (indexing.get().isCompleted) {
+      indexing.set(Promise())
+    }
     sourceItemsToBuildTarget.values.foreach(_.clear())
     sourceItemsToBuildTarget.clear()
     buildTargetInfo.clear()
@@ -57,6 +65,15 @@ final class BuildTargets() {
     buildTargetSources.clear()
     inverseDependencySources.clear()
   }
+
+  def whenFinishedIndexing(): Unit = {
+    indexing.get().success(())
+  }
+
+  def indexed: Future[Unit] = {
+    indexing.get().future
+  }
+
   def sourceItems: Iterable[AbsolutePath] =
     sourceItemsToBuildTarget.keys
   def sourceItemsToBuildTargets
@@ -201,13 +218,13 @@ final class BuildTargets() {
    * By default, we rely on carefully recording what build target produced what
    * files in the `.metals/readonly/` directory. This approach has the problem
    * that navigation failed to work in `readonly/` sources if
-
+   *
    * - a new metals feature forgot to record the build target
    * - a user removes `.metals/metals.h2.db`
-
+   *
    * When encountering an unknown `readonly/` file we do the following steps to
    * infer what build target it belongs to:
-
+   *
    * - extract toplevel symbol definitions from the source code.
    * - find a jar file from any classfile that defines one of the toplevel
    *   symbols.

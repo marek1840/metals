@@ -85,6 +85,12 @@ object ServerCommands {
        |""".stripMargin
   )
 
+  val OpenDebugSession = Command(
+    "debug-session-open",
+    "Open debug session",
+    "Requests a debug session from BSP Server"
+  )
+
   val PresentationCompilerRestart = Command(
     "presentation-compiler-restart",
     "Restart presentation compiler",
@@ -166,7 +172,7 @@ object ServerCommands {
     RunDoctor,
     CascadeCompile,
     CancelCompile,
-    BspSwitch
+    BspSwitch,
+    OpenDebugSession
   )
-
 }
