@@ -14,16 +14,17 @@ import scala.meta.internal.metals.Embedded
 
 object Main {
   def main(args: Array[String]): Unit = {
-    val systemIn = System.in
+    val systemIn =    System.in
     val systemOut = System.out
-    val tracePrinter = GlobalTrace.setup("LSP")
+    val tracePrinter = 
+      GlobalTrace.setup("LSP")
     val exec = Executors.newCachedThreadPool()
     val ec = ExecutionContext.fromExecutorService(exec)
     val config = MetalsServerConfig.default
     val server = new MetalsLanguageServer(
       ec,
       redirectSystemOut = true,
-      charset = StandardCharsets.UTF_8,
+      charset =  StandardCharsets.UTF_8,
       config = config,
       newBloopClassloader = () =>
         Embedded.newBloopClassloader(config.bloopEmbeddedVersion)
