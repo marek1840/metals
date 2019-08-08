@@ -8,16 +8,21 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
-import ch.epfl.scala.bsp4j.BuildClientCapabilities
-import ch.epfl.scala.bsp4j.CompileParams
-import ch.epfl.scala.bsp4j.CompileResult
-import ch.epfl.scala.bsp4j.InitializeBuildParams
-import ch.epfl.scala.bsp4j.InitializeBuildResult
-import ch.epfl.scala.bsp4j.ScalaMainClassesParams
-import ch.epfl.scala.bsp4j.ScalaMainClassesResult
-import ch.epfl.scala.bsp4j.ScalaTestClassesParams
-import ch.epfl.scala.bsp4j.ScalaTestClassesResult
+
+import ch.epfl.scala.bsp4j.{
+  BuildClientCapabilities,
+  CompileParams,
+  CompileResult,
+  DebugSessionParams,
+  InitializeBuildParams,
+  InitializeBuildResult,
+  ScalaMainClassesParams,
+  ScalaMainClassesResult,
+  ScalaTestClassesParams,
+  ScalaTestClassesResult
+}
 import org.eclipse.lsp4j.jsonrpc.Launcher
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
@@ -86,10 +91,10 @@ case class BuildServerConnection(
     register(server.buildTargetScalaTestClasses(params))
   }
 
-  def startDebugSession(launchParameters: Any): CompletableFuture[URI] = {
+  def startDebugSession(params: DebugSessionParams): CompletableFuture[URI] = {
     register(
       server
-        .startDebugSession(launchParameters)
+        .startDebugSession(params)
         .thenApply(address => URI.create(address.getUri))
     )
   }

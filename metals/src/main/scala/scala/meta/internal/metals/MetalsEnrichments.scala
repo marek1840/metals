@@ -13,14 +13,21 @@ import java.util
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
+
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.{lsp4j => l}
+
 import scala.collection.convert.DecorateAsJava
 import scala.collection.convert.DecorateAsScala
 import scala.compat.java8.FutureConverters
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.concurrent.Promise
+import scala.concurrent.{
+  Await,
+  ExecutionContext,
+  Future,
+  Promise,
+  TimeoutException
+}
+import scala.concurrent.duration.{FiniteDuration, TimeUnit}
 import scala.meta.Tree
 import scala.meta.inputs.Input
 import scala.meta.internal.io.FileIO
@@ -31,7 +38,7 @@ import scala.meta.internal.trees.Origin
 import scala.meta.internal.{semanticdb => s}
 import scala.meta.io.AbsolutePath
 import scala.meta.tokens.Token
-import scala.util.Properties
+import scala.util.{Failure, Properties, Success, Try}
 import scala.{meta => m}
 
 /**
@@ -57,6 +64,8 @@ object MetalsEnrichments
     extends DecorateAsJava
     with DecorateAsScala
     with MtagsEnrichments {
+  val CompletedVoidFuture: CompletableFuture[Void] =
+    CompletableFuture.allOf(CompletableFuture.completedFuture(()))
 
   implicit class XtensionBuildTarget(buildTarget: b.BuildTarget) {
     def asScalaBuildTarget: Option[b.ScalaBuildTarget] = {
@@ -115,7 +124,7 @@ object MetalsEnrichments
     }
   }
 
-  implicit class XtensionJavaFuture[T](future: CompletionStage[T]) {
+  implicit class XtensionJavaCompletionStage[T](future: CompletionStage[T]) {
     def asScala: Future[T] = FutureConverters.toScala(future)
   }
 
@@ -128,7 +137,8 @@ object MetalsEnrichments
       future.asJava.asInstanceOf[CompletableFuture[Object]]
     def asJavaUnit(implicit ec: ExecutionContext): CompletableFuture[Unit] =
       future.ignoreValue.asJava
-
+    def voided(implicit ec: ExecutionContext): CompletableFuture[Void] =
+      future.flatMap(_ => Future(null: Void)).asJava
     def ignoreValue(implicit ec: ExecutionContext): Future[Unit] =
       future.map(_ => ())
     def logErrorAndContinue(
@@ -147,6 +157,23 @@ object MetalsEnrichments
           scribe.error(s"Unexpected error while $doingWhat", e)
           throw e
       }
+    }
+
+    def withTimeout(length: Int, unit: TimeUnit)(
+        implicit ec: ExecutionContext
+    ): Future[A] = {
+      Future(Await.result(future, FiniteDuration(length, unit)))
+    }
+
+    def onTimeout(length: Int, unit: TimeUnit)(
+        action: => Unit
+    )(implicit ec: ExecutionContext): Future[A] = {
+      // schedule action to execute on timeout
+      Future(Await.ready(future, FiniteDuration(length, unit))).onComplete {
+        case Failure(e: TimeoutException) => action
+        case _ => // ignore
+      }
+      future
     }
   }
 
@@ -482,6 +509,13 @@ object MetalsEnrichments
   implicit class XtensionPromise[T](promise: Promise[T]) {
     def cancel(): Unit =
       promise.tryFailure(new CancellationException())
+  }
+
+  implicit class XtensionTry[T](t: Try[T]) {
+    def toFuture: Future[T] = t match {
+      case Failure(exception) => Future.failed(exception)
+      case Success(value) => Future.successful(value)
+    }
   }
 
   implicit class XtensionTreeTokenStream(tree: Tree) {

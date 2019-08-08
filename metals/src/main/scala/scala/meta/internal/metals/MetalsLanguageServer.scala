@@ -1,53 +1,51 @@
 package scala.meta.internal.metals
 
-import java.net.URI
-import java.net.URLClassLoader
-import java.nio.charset.Charset
-import java.nio.charset.StandardCharsets
+import java.net.{ServerSocket, URI, URLClassLoader}
+import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.file._
 import java.util
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
-import ch.epfl.scala.bsp4j.DependencySourcesParams
-import ch.epfl.scala.bsp4j.DependencySourcesResult
-import ch.epfl.scala.bsp4j.ScalacOptionsParams
-import ch.epfl.scala.bsp4j.SourcesParams
-import com.google.gson.JsonElement
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
+import java.util.concurrent.{
+  CompletableFuture,
+  Executors,
+  ScheduledExecutorService,
+  TimeUnit
+}
+
+import ch.epfl.scala.bsp4j.{
+  DependencySourcesParams,
+  DependencySourcesResult,
+  ScalacOptionsParams,
+  SourcesParams
+}
+import com.google.common.net.InetAddresses
+import com.google.gson.{JsonElement, JsonObject, JsonPrimitive}
 import io.methvin.watcher.DirectoryChangeEvent
 import io.methvin.watcher.DirectoryChangeEvent.EventType
 import io.undertow.server.HttpServerExchange
 import org.eclipse.lsp4j._
-import org.eclipse.{lsp4j => l}
 import org.eclipse.lsp4j.jsonrpc.messages.{Either => JEither}
-import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
-import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
-import scala.collection.mutable.ArrayBuffer
+import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
+import org.eclipse.{lsp4j => l}
+
 import scala.collection.mutable
-import scala.concurrent.Await
-import scala.concurrent.ExecutionContextExecutorService
-import scala.concurrent.Future
-import scala.concurrent.Promise
-import scala.concurrent.TimeoutException
-import scala.concurrent.duration.Duration
-import scala.meta.internal.builds.BuildTool
-import scala.meta.internal.builds.BuildTools
+import scala.collection.mutable.ArrayBuffer
+import scala.concurrent._
+import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.meta.internal.builds.{BuildTool, BuildTools}
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.MetalsEnrichments._
-import scala.meta.internal.tvp._
+import scala.meta.internal.metals.debug.DebugAdapterProxy
 import scala.meta.internal.mtags._
 import scala.meta.internal.semanticdb.Scala._
+import scala.meta.internal.tvp._
 import scala.meta.io.AbsolutePath
 import scala.meta.parsers.ParseException
 import scala.meta.pc.CancelToken
 import scala.meta.tokenizers.TokenizeException
 import scala.util.control.NonFatal
-import scala.util.Success
-import com.google.gson.JsonPrimitive
-import com.google.gson.JsonObject
+import scala.util.{Failure, Success}
+//import scala.meta.internal.metals.debug.DebugAdapterProxy.DebugAdapter
 
 class MetalsLanguageServer(
     ec: ExecutionContextExecutorService,
@@ -73,11 +71,13 @@ class MetalsLanguageServer(
         case Some(build) => build.shutdown()
         case None => Future.successful(())
       }
+
       try cancelables.cancel()
       catch {
         case NonFatal(_) =>
       }
-      try buildShutdown.asJava.get(100, TimeUnit.MILLISECONDS)
+
+      try Await.ready(buildShutdown, FiniteDuration(100, TimeUnit.MILLISECONDS))
       catch {
         case _: TimeoutException =>
       }
@@ -1097,26 +1097,33 @@ class MetalsLanguageServer(
           )
         }.asJavaObject
       case ServerCommands.OpenDebugSession() =>
-        val uri = params.getArguments.asScala.toList match {
-          case Nil =>
-            Future.failed(
-              new IllegalStateException("Launch parameters not specified")
-            )
-          case arg :: Nil =>
-            val uri = buildServer match {
-              case None =>
-                Future.failed(new IllegalStateException("No Build server"))
-              case Some(server) =>
-                server.startDebugSession(arg).asScala
-            }
-            uri
-          case args =>
-            val unexpected = args.drop(1)
-            Future.failed(
-              new IllegalStateException(s"Unexpected arguments: $unexpected")
-            )
-        }
-        uri.asJavaObject
+        val uri =
+          DebugAdapterProxy.parseParameters(params.getArguments.asScala) match {
+            case Failure(exception) =>
+              Failure(exception)
+            case Success(parameters) =>
+              val proxyServer = new ServerSocket(0)
+
+              DebugAdapterProxy
+                .create(buildServer, proxyServer, parameters)
+                .map(cancelables.add)
+                .onTimeout(5, TimeUnit.SECONDS)(
+                  languageClient.showMessage(
+                    MessageType.Error,
+                    "Could not open a debug session"
+                  )
+                )
+
+              val proxyURI = {
+                val host = InetAddresses.toUriString(proxyServer.getInetAddress)
+                val port = proxyServer.getLocalPort
+                URI.create(s"tcp://$host:$port")
+              }
+
+              Success(proxyURI)
+          }
+
+        uri.toFuture.asJavaObject
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject

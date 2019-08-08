@@ -6,7 +6,11 @@ import scala.concurrent.ExecutionContext
 case class CancelableFuture[T](
     future: Future[T],
     cancelable: Cancelable = Cancelable.empty
-)
+) extends Cancelable {
+  def cancel(): Unit = {
+    cancelable.cancel()
+  }
+}
 
 object CancelableFuture {
   def apply[T](

@@ -6,7 +6,7 @@ import java.util.concurrent.CompletableFuture
 
 import ch.epfl.scala.{bsp4j => b}
 import javax.annotation.Nullable
-import org.eclipse.lsp4j.ExecuteCommandParams
+import org.eclipse.lsp4j.{ExecuteCommandParams, MessageParams, MessageType}
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageClient
@@ -67,6 +67,11 @@ trait MetalsLanguageClient extends LanguageClient with TreeViewClient {
     val params =
       new ExecuteCommandParams("metals-compilation-finished", arguments)
     metalsExecuteClientCommand(params)
+  }
+
+  final def showMessage(messageType: MessageType, message: String): Unit = {
+    val params = new MessageParams(messageType, message)
+    showMessage(params)
   }
 
   def shutdown(): Unit = {}
