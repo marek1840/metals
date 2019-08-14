@@ -11,6 +11,10 @@ trait ServerEndpoint extends IDebugProtocolServer with ClientProxy
 object ServerEndpoint {
   def apply(proxy: IDebugProtocolClient): ServerEndpoint =
     new ServerEndpoint {
-      override protected val client: IDebugProtocolClient = proxy
+      override protected[this] def notifyClient(
+          f: IDebugProtocolClient => Unit
+      ): Unit = {
+        f(proxy)
+      }
     }
 }

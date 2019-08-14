@@ -4,164 +4,164 @@ import java.util.concurrent.CompletableFuture
 import org.eclipse.lsp4j.debug._
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer
 
-import scala.meta.internal.metals.MetalsEnrichments._
-
 trait ServerProxy extends IDebugProtocolServer {
-  protected[this] def server: IDebugProtocolServer
+  protected[this] def requestFromServer[A](
+      f: IDebugProtocolServer => CompletableFuture[A]
+  ): CompletableFuture[A]
 
   override def runInTerminal(
       args: RunInTerminalRequestArguments
   ): CompletableFuture[RunInTerminalResponse] =
-    server.runInTerminal(args)
+    requestFromServer(_.runInTerminal(args))
 
   override def initialize(
       args: InitializeRequestArguments
   ): CompletableFuture[Capabilities] =
-    server.initialize(args)
+    requestFromServer(_.initialize(args))
 
   override def configurationDone(
       args: ConfigurationDoneArguments
   ): CompletableFuture[Void] =
-    server.configurationDone(args)
+    requestFromServer(_.configurationDone(args))
 
   override def launch(
       args: java.util.Map[String, AnyRef]
   ): CompletableFuture[Void] =
-    server.launch(args)
+    requestFromServer(_.launch(args))
 
   override def attach(
       args: java.util.Map[String, AnyRef]
   ): CompletableFuture[Void] = {
-    server.attach(args)
+    requestFromServer(_.attach(args))
   }
 
   override def restart(args: RestartArguments): CompletableFuture[Void] =
-    server.restart(args)
+    requestFromServer(_.restart(args))
 
   override def disconnect(args: DisconnectArguments): CompletableFuture[Void] =
-    server.disconnect(args)
+    requestFromServer(_.disconnect(args))
 
   override def terminate(args: TerminateArguments): CompletableFuture[Void] =
-    server.terminate(args)
+    requestFromServer(_.terminate(args))
 
   override def setBreakpoints(
       args: SetBreakpointsArguments
   ): CompletableFuture[SetBreakpointsResponse] =
-    server.setBreakpoints(args)
+    requestFromServer(_.setBreakpoints(args))
 
   override def setFunctionBreakpoints(
       args: SetFunctionBreakpointsArguments
   ): CompletableFuture[SetFunctionBreakpointsResponse] =
-    server.setFunctionBreakpoints(args)
+    requestFromServer(_.setFunctionBreakpoints(args))
 
   override def setExceptionBreakpoints(
       args: SetExceptionBreakpointsArguments
   ): CompletableFuture[Void] =
-    server.setExceptionBreakpoints(args)
+    requestFromServer(_.setExceptionBreakpoints(args))
 
   override def continue_(
       args: ContinueArguments
   ): CompletableFuture[ContinueResponse] =
-    server.continue_(args)
+    requestFromServer(_.continue_(args))
 
   override def next(args: NextArguments): CompletableFuture[Void] =
-    server.next(args)
+    requestFromServer(_.next(args))
 
   override def stepIn(args: StepInArguments): CompletableFuture[Void] =
-    server.stepIn(args)
+    requestFromServer(_.stepIn(args))
 
   override def stepOut(args: StepOutArguments): CompletableFuture[Void] =
-    server.stepOut(args)
+    requestFromServer(_.stepOut(args))
 
   override def stepBack(args: StepBackArguments): CompletableFuture[Void] =
-    server.stepBack(args)
+    requestFromServer(_.stepBack(args))
 
   override def reverseContinue(
       args: ReverseContinueArguments
   ): CompletableFuture[Void] =
-    server.reverseContinue(args)
+    requestFromServer(_.reverseContinue(args))
 
   override def restartFrame(
       args: RestartFrameArguments
   ): CompletableFuture[Void] =
-    server.restartFrame(args)
+    requestFromServer(_.restartFrame(args))
 
   override def goto_(args: GotoArguments): CompletableFuture[Void] =
-    server.goto_(args)
+    requestFromServer(_.goto_(args))
 
   override def pause(args: PauseArguments): CompletableFuture[Void] =
-    server.pause(args)
+    requestFromServer(_.pause(args))
 
   override def stackTrace(
       args: StackTraceArguments
   ): CompletableFuture[StackTraceResponse] =
-    server.stackTrace(args)
+    requestFromServer(_.stackTrace(args))
 
   override def scopes(
       args: ScopesArguments
   ): CompletableFuture[ScopesResponse] =
-    server.scopes(args)
+    requestFromServer(_.scopes(args))
 
   override def variables(
       args: VariablesArguments
   ): CompletableFuture[VariablesResponse] =
-    server.variables(args)
+    requestFromServer(_.variables(args))
 
   override def setVariable(
       args: SetVariableArguments
   ): CompletableFuture[SetVariableResponse] =
-    server.setVariable(args)
+    requestFromServer(_.setVariable(args))
 
   override def source(
       args: SourceArguments
   ): CompletableFuture[SourceResponse] =
-    server.source(args)
+    requestFromServer(_.source(args))
 
   override def threads(): CompletableFuture[ThreadsResponse] =
-    server.threads()
+    requestFromServer(_.threads())
 
   override def terminateThreads(
       args: TerminateThreadsArguments
   ): CompletableFuture[Void] =
-    server.terminateThreads(args)
+    requestFromServer(_.terminateThreads(args))
 
   override def modules(
       args: ModulesArguments
   ): CompletableFuture[ModulesResponse] =
-    server.modules(args)
+    requestFromServer(_.modules(args))
 
   override def loadedSources(
       args: LoadedSourcesArguments
   ): CompletableFuture[LoadedSourcesResponse] =
-    server.loadedSources(args)
+    requestFromServer(_.loadedSources(args))
 
   override def evaluate(
       args: EvaluateArguments
   ): CompletableFuture[EvaluateResponse] =
-    server.evaluate(args)
+    requestFromServer(_.evaluate(args))
 
   override def setExpression(
       args: SetExpressionArguments
   ): CompletableFuture[SetExpressionResponse] =
-    server.setExpression(args)
+    requestFromServer(_.setExpression(args))
 
   override def stepInTargets(
       args: StepInTargetsArguments
   ): CompletableFuture[StepInTargetsResponse] =
-    server.stepInTargets(args)
+    requestFromServer(_.stepInTargets(args))
 
   override def gotoTargets(
       args: GotoTargetsArguments
   ): CompletableFuture[GotoTargetsResponse] =
-    server.gotoTargets(args)
+    requestFromServer(_.gotoTargets(args))
 
   override def completions(
       args: CompletionsArguments
   ): CompletableFuture[CompletionsResponse] =
-    server.completions(args)
+    requestFromServer(_.completions(args))
 
   override def exceptionInfo(
       args: ExceptionInfoArguments
   ): CompletableFuture[ExceptionInfoResponse] =
-    server.exceptionInfo(args)
+    requestFromServer(_.exceptionInfo(args))
 }

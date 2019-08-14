@@ -1,7 +1,7 @@
 package scala.meta.internal.metals.debug
-import java.net.{ServerSocket, Socket, URI}
-import java.util.concurrent.locks.ReentrantLock
-import java.util.concurrent.{CompletableFuture, CountDownLatch, TimeUnit}
+import java.net.{ServerSocket, Socket}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
+import java.util.concurrent.{CompletableFuture, TimeUnit}
 
 import ch.epfl.scala.bsp4j.DebugSessionParams
 import ch.epfl.scala.{bsp4j => b}
@@ -12,143 +12,133 @@ import org.eclipse.lsp4j.debug.services.{
   IDebugProtocolServer
 }
 
-import scala.concurrent.{ExecutionContextExecutorService, Future, Promise}
-import scala.meta.internal.metals.MetalsEnrichments._
-import scala.meta.internal.metals.{
-  BuildServerConnection,
-  Cancelable,
-  MutableCancelable,
-  Remote
+import scala.concurrent.{
+  ExecutionContextExecutorService,
+  Future,
+  TimeoutException
 }
-import scala.reflect.ClassTag
+import scala.meta.internal.metals.MetalsEnrichments._
+import scala.meta.internal.metals.{BuildServerConnection, Cancelable}
 import scala.util.{Failure, Try}
 
-class DebugAdapterProxy(
-    connectToServer: DebugAdapterProxy => Future[Remote[ServerEndpoint]],
-    connectToClient: DebugAdapterProxy => Future[Remote[ClientEndpoint]]
-)(
+class DebugAdapterProxy(sessionFactory: DebugSession.Factory)(
     implicit val ec: ExecutionContextExecutorService
 ) extends ClientProxy
     with ServerProxy
     with Cancelable {
 
-  /**
-   * TODO
-   */
-  private var terminated = Promise[Unit]()
-  private var cancelables = new MutableCancelable() // TODO clean somehow
+  private val isCanceled = new AtomicBoolean(false)
+  private val isRestarting = new AtomicBoolean(false)
+  @volatile private val session = new AtomicReference[DebugSession]()
 
-  protected var client: IDebugProtocolClient = _
-  protected var server: IDebugProtocolServer = _
+//  @volatile var state: State = Idle
 
-  private def connectToServer(): Future[Unit] = {
-    // TODO lock until connected
-
-    val disconnected = if (server == null) {
-      Future.successful(())
-    } else {
-      val args = new DisconnectArguments
-      args.setTerminateDebuggee(true)
-      server.disconnect(args).asScala
-    }
-
-    val connection: Future[Unit] = for {
-      _ <- disconnected
-      server <- connectToServer(this)
-    } yield {
-      cancelables = new MutableCancelable()
-      this.server = server.service
-      cancelables.add(server)
-      server.start()
-    }
-
-    connection
-      .onTimeout(30, TimeUnit.SECONDS)(this.cancel())
-  }
-
-  private def connectToClient(): Future[Unit] = {
-    // TODO lock until connected
-
-    val disconnected = if (client == null) {
-      Future.successful(())
-    } else {
-      terminated.future
-    }
-
-    val connection: Future[Unit] = for {
-      _ <- disconnected
-      client <- connectToClient(this)
-    } yield {
-      this.client = client.service
-      cancelables.add(client)
-      terminated = Promise()
-      client.start()
-    }
-
-    connection
-      .onTimeout(30, TimeUnit.SECONDS)(this.cancel())
-  }
-
-  /**
-   * Connecting to client must happen last, so that we can safely
-   * forward the requests to the already connected server
-   */
   private[DebugAdapterProxy] def connect(): Future[Unit] = {
-    for {
-      _ <- connectToServer()
-      _ <- connectToClient()
-    } yield ()
+    if (isCanceled.get()) Future.unit
+    else {
+      sessionFactory.create(this).map { newSession =>
+        val oldSession = this.session.getAndSet(newSession)
+
+        if (oldSession != null) {
+          oldSession.cancel()
+        }
+
+        if (isCanceled.get()) {
+          newSession.cancel()
+        }
+      }
+    }
   }
 
   override def disconnect(
       args: DisconnectArguments
   ): CompletableFuture[Void] = {
-    if (true) { // TODO fix pretending it is always a restart {
-      val disconnectedServer = connectToServer()
-      disconnectedServer.foreach(_ => connectToClient())
-      disconnectedServer.voided
+    if (args.getRestart) {
+      if (isRestarting.compareAndSet(false, true)) {
+        args.setRestart(false) // since metals is handling the restarting
+
+        val serverSessionTerminated = {
+          val terminated = this.session.get().terminated.future
+          terminated
+            .withTimeout(10, TimeUnit.SECONDS)
+            .recover { case _: TimeoutException => () }
+        }
+
+        //          super
+//            .disconnect(args)
+//            .asScala
+//            .flatMap(_ => this.session.get().terminated.future)
+//            .withTimeout(10, TimeUnit.SECONDS)
+//            .recover { case _: TimeoutException => () }
+
+        // accept new connection in the background
+        connect().onComplete(_ => {
+          isRestarting.set(false)
+        })
+
+        serverSessionTerminated.voided
+      } else {
+        Future.unit.voided // do nothing if already restarting
+      }
     } else {
       super.disconnect(args)
     }
   }
 
-  // TODO if restarting, set flag to true
   override def terminated(args: TerminatedEventArguments): Unit = {
-    args.setRestart(true)
+    if (isRestarting.get()) {
+      args.setRestart(true)
+    }
+
     try super.terminated(args)
-    finally terminated.success(())
+    finally session.get().terminated.success(())
   }
 
   def cancel(): Unit = {
-    val args = new DisconnectArguments()
-    args.setTerminateDebuggee(true)
-
-    val communicationDone = for {
-      _ <- server.disconnect(args).asScala
-      _ <- terminated.future.withTimeout(30, TimeUnit.SECONDS)
-    } yield ()
-
-    // close the communication even if client or server weren't closed
-    communicationDone.onComplete(_ => cancelables.cancel())
+    if (isCanceled.compareAndSet(false, true)) {
+      val session = this.session.get()
+      if (session != null) {
+        session.cancel()
+      }
+    }
   }
+
+  override protected[this] def notifyClient(
+      f: IDebugProtocolClient => Unit
+  ): Unit = {
+    val session = this.session.get()
+    if (session != null) {
+      f(session)
+    }
+  }
+
+  override protected[this] def requestFromServer[A](
+      f: IDebugProtocolServer => CompletableFuture[A]
+  ): CompletableFuture[A] = {
+    val session = this.session.get()
+    if (session != null) {
+      f(session)
+    } else {
+      Future.failed(new IllegalStateException("No debug session open")).asJava
+    }
+  }
+
 }
 
 object DebugAdapterProxy {
-  final case class DebugAdapter(address: URI, proxy: Cancelable)
-
-  private def remote[A: ClassTag](name: String, socket: Socket, service: A)(
-      implicit ec: ExecutionContextExecutorService
-  ): Future[Remote[A]] = {
-    Future(Remote.jsonRPC(name, socket, service))
-      .onTimeout(30, TimeUnit.SECONDS)(socket.close())
-  }
+  sealed trait State
+  final case object Idle extends State
+  final case object Canceled extends State
+  final case class Running(session: DebugSession) extends State
+  final case class Restarting(previousSessionTerminated: Future[Unit])
+      extends State
 
   def create(
       buildServer: => Option[BuildServerConnection],
       proxyServer: ServerSocket,
       parameters: DebugSessionParams
   )(implicit ec: ExecutionContextExecutorService): Future[DebugAdapterProxy] = {
-    val connectToServer = (client: DebugAdapterProxy) => {
+    val connectToServer = () => {
       buildServer match {
         case None =>
           Future.failed(new IllegalStateException("No build server"))
@@ -157,26 +147,19 @@ object DebugAdapterProxy {
             .startDebugSession(parameters)
             .asScala
             .map(uri => new Socket(uri.getHost, uri.getPort))
-            .flatMap(remote("DAP-server", _, ServerEndpoint(client)))
       }
     }
 
-    val connectToClient = (server: DebugAdapterProxy) => {
-      Future(proxyServer.accept())
-        .flatMap(remote("DAP-client", _, ClientEndpoint(server)))
-    }
+    val sessionFactory = new DebugSession.Factory(connectToServer, proxyServer)
 
-    val proxy = new DebugAdapterProxy(connectToServer, connectToClient)
+    val proxy = new DebugAdapterProxy(sessionFactory)
     proxy
       .connect()
       .map(_ => proxy)
-      .onTimeout(3, TimeUnit.SECONDS) {
-        proxy.cancel()
-      }
+      .onTimeout(10, TimeUnit.SECONDS)(proxy.cancel())
   }
 
   private val gson = new Gson()
-  // TODO should return (List[BuildTargetIdentifier], argToForward)
   def parseParameters(arguments: Seq[Any]): Try[b.DebugSessionParams] =
     arguments match {
       case Seq(params: JsonObject) =>

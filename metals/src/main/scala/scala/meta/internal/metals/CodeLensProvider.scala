@@ -6,6 +6,7 @@ import java.util.Collections._
 
 import ch.epfl.scala.bsp4j.ScalaMainClass
 import ch.epfl.scala.{bsp4j => b}
+import org.eclipse.lsp4j.CodeLens
 import org.eclipse.{lsp4j => l}
 
 import scala.concurrent.ExecutionContext
@@ -27,12 +28,17 @@ final class CodeLensProvider(
     buildTargets.indexed.flatMap { _ =>
       buildTargets.inverseSources(path) match {
         case Some(buildTarget) =>
-          for {
-            classes <- buildTargetClasses.compiledClasses(buildTarget)
-            lenses = findLenses(path, buildTarget, classes)
-          } yield lenses.asJava
+          if (compilations.isCurrentlyCompiling(buildTarget)) {
+            // code lenses will be refreshed after compilation
+            CodeLensProvider.Empty
+          } else {
+            for {
+              classes <- buildTargetClasses.compiledClasses(buildTarget)
+              lenses = findLenses(path, buildTarget, classes)
+            } yield lenses.asJava
+          }
         case _ =>
-          Future.successful(emptyList[l.CodeLens]())
+          CodeLensProvider.Empty
       }
     }
   }
@@ -74,6 +80,9 @@ final class CodeLensProvider(
 }
 
 object CodeLensProvider {
+  val Empty: Future[util.List[CodeLens]] =
+    Future.successful(emptyList[l.CodeLens]())
+
   sealed trait CommandFactory[A] {
     protected def names: List[String]
     protected def dataKind: String

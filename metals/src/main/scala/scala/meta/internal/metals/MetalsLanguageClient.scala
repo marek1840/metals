@@ -51,24 +51,6 @@ trait MetalsLanguageClient extends LanguageClient with TreeViewClient {
       params: MetalsInputBoxParams
   ): CompletableFuture[MetalsInputBoxResult]
 
-  final def notifyCompilationStarted(
-      buildTargets: Seq[b.BuildTargetIdentifier]
-  ): Unit = {
-    val arguments = Collections.singletonList[Object](buildTargets.asJava)
-    val params =
-      new ExecuteCommandParams("metals-compilation-started", arguments)
-    metalsExecuteClientCommand(params)
-  }
-
-  final def notifyCompilationFinished(
-      buildTargets: Seq[b.BuildTargetIdentifier]
-  ): Unit = {
-    val arguments = Collections.singletonList[Object](buildTargets.asJava)
-    val params =
-      new ExecuteCommandParams("metals-compilation-finished", arguments)
-    metalsExecuteClientCommand(params)
-  }
-
   final def showMessage(messageType: MessageType, message: String): Unit = {
     val params = new MessageParams(messageType, message)
     showMessage(params)

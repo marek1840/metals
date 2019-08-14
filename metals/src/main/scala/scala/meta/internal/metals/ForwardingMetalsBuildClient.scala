@@ -1,16 +1,12 @@
 package scala.meta.internal.metals
 
-import ch.epfl.scala.bsp4j.BuildTargetIdentifier
-import ch.epfl.scala.bsp4j.CompileReport
-import ch.epfl.scala.bsp4j.TaskDataKind
-import ch.epfl.scala.bsp4j.TaskFinishParams
-import ch.epfl.scala.bsp4j.TaskProgressParams
-import ch.epfl.scala.bsp4j.TaskStartParams
-import ch.epfl.scala.{bsp4j => b}
-import com.google.gson.JsonObject
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
+import ch.epfl.scala.bsp4j._
+import ch.epfl.scala.{bsp4j => b}
+import com.google.gson.JsonObject
+import org.eclipse.lsp4j.ExecuteCommandParams
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.{lsp4j => l}
 
@@ -49,11 +45,6 @@ final class ForwardingMetalsBuildClient(
   private val hasReportedError = Collections.newSetFromMap(
     new ConcurrentHashMap[BuildTargetIdentifier, java.lang.Boolean]()
   )
-
-  private val notifyStarted =
-    BatchedFunction.fromFunction(languageClient.notifyCompilationStarted)
-  private val notifyFinished =
-    BatchedFunction.fromFunction(languageClient.notifyCompilationFinished)
 
   def reset(): Unit = {
     cancel()
@@ -113,7 +104,6 @@ final class ForwardingMetalsBuildClient(
           val isNoOp = params.getMessage.startsWith("Start no-op compilation")
           if (!isNoOp) {
             buildTargetClasses.onStartedCompilation(task.getTarget)
-            notifyStarted(task.getTarget)
           }
           val compilation = Compilation(new Timer(time), promise, isNoOp)
           compilations(task.getTarget) = compilation
@@ -158,8 +148,13 @@ final class ForwardingMetalsBuildClient(
               statusBar.addMessage(message)
             }
             if (!compilation.isNoOp) {
-              notifyFinished(target) // note, there is no notification when compilation fails
               treeViewProvider().onBuildTargetDidCompile(report.getTarget())
+              languageClient.metalsExecuteClientCommand(
+                new ExecuteCommandParams(
+                  ClientCommands.CompilationDone.id,
+                  Collections.emptyList()
+                )
+              )
             }
             hasReportedError.remove(target)
           } else {

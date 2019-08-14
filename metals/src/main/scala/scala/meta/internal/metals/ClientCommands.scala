@@ -73,6 +73,13 @@ object ClientCommands {
     """.stripMargin
   )
 
+  // TODO
+  val CompilationDone = Command(
+    "metals-compilation-done",
+    "",
+    ""
+  )
+
   val GotoLocation = Command(
     "metals-goto-location",
     "Goto location",
@@ -97,6 +104,7 @@ object ClientCommands {
     ToggleLogs,
     FocusDiagnostics,
     GotoLocation,
-    EchoCommand
+    EchoCommand,
+    CompilationDone
   )
 }

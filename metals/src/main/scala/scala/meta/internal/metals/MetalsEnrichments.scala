@@ -1,39 +1,29 @@
 package scala.meta.internal.metals
 
-import ch.epfl.scala.{bsp4j => b}
-import io.undertow.server.HttpServerExchange
 import java.net.URI
 import java.nio.charset.StandardCharsets
-import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
-import java.nio.file.StandardCopyOption
+import java.nio.file._
 import java.util
-import java.util.concurrent.CancellationException
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionStage
+import java.util.concurrent.{
+  CancellationException,
+  CompletableFuture,
+  CompletionStage
+}
 
+import ch.epfl.scala.{bsp4j => b}
+import io.undertow.server.HttpServerExchange
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.{lsp4j => l}
 
-import scala.collection.convert.DecorateAsJava
-import scala.collection.convert.DecorateAsScala
+import scala.collection.convert.{DecorateAsJava, DecorateAsScala}
 import scala.compat.java8.FutureConverters
-import scala.concurrent.{
-  Await,
-  ExecutionContext,
-  Future,
-  Promise,
-  TimeoutException
-}
+import scala.concurrent._
 import scala.concurrent.duration.{FiniteDuration, TimeUnit}
 import scala.meta.Tree
 import scala.meta.inputs.Input
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.mtags.MtagsEnrichments
-import scala.meta.internal.semanticdb.Scala.Descriptor
-import scala.meta.internal.semanticdb.Scala.Symbols
+import scala.meta.internal.semanticdb.Scala.{Descriptor, Symbols}
 import scala.meta.internal.trees.Origin
 import scala.meta.internal.{semanticdb => s}
 import scala.meta.io.AbsolutePath
@@ -169,11 +159,11 @@ object MetalsEnrichments
         action: => Unit
     )(implicit ec: ExecutionContext): Future[A] = {
       // schedule action to execute on timeout
-      Future(Await.ready(future, FiniteDuration(length, unit))).onComplete {
-        case Failure(e: TimeoutException) => action
-        case _ => // ignore
+      future.withTimeout(length, unit).recoverWith {
+        case e: TimeoutException =>
+          action
+          Future.failed(e)
       }
-      future
     }
   }
 
