@@ -27,7 +27,8 @@ final class ForwardingMetalsBuildClient(
     statusBar: StatusBar,
     time: Time,
     didCompile: CompileReport => Unit,
-    treeViewProvider: () => TreeViewProvider
+    treeViewProvider: () => TreeViewProvider,
+    isCurrentlyOpened: b.BuildTargetIdentifier => Boolean
 )(implicit ec: ExecutionContext)
     extends MetalsBuildClient
     with Cancelable {
@@ -149,12 +150,15 @@ final class ForwardingMetalsBuildClient(
             }
             if (!compilation.isNoOp) {
               treeViewProvider().onBuildTargetDidCompile(report.getTarget())
-              languageClient.metalsExecuteClientCommand(
-                new ExecuteCommandParams(
-                  ClientCommands.CompilationDone.id,
-                  Collections.emptyList()
+
+              if (isCurrentlyOpened(target)) {
+                languageClient.metalsExecuteClientCommand(
+                  new ExecuteCommandParams(
+                    ClientCommands.CompilationDone.id,
+                    Collections.emptyList()
+                  )
                 )
-              )
+              }
             }
             hasReportedError.remove(target)
           } else {
