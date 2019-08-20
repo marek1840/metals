@@ -1,16 +1,18 @@
-package scala.meta.internal.metals
+package scala.meta.internal.metals.debug
 
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
-import org.eclipse.lsp4j.jsonrpc.Launcher
+import org.eclipse.lsp4j.jsonrpc.{Launcher, MessageConsumer}
 import org.eclipse.lsp4j.jsonrpc.debug.DebugLauncher
+import org.eclipse.lsp4j.jsonrpc.messages.Message
 
 import scala.concurrent.{
   ExecutionContext,
   ExecutionContextExecutorService,
   Future
 }
+import scala.meta.internal.metals.{Cancelable, GlobalTrace}
 import scala.reflect.{ClassTag, classTag}
 
 final case class Remote[A](launcher: Launcher[A], socket: Socket)(
@@ -49,5 +51,16 @@ object Remote {
       .create()
 
     Remote(launcher, socket)
+  }
+
+  private final class MessageWrapper(
+      next: MessageConsumer,
+      listener: Message => Unit
+  ) extends MessageConsumer {
+    override def consume(message: Message): Unit = {
+      try next.consume(message)
+      finally listener(message)
+    }
+
   }
 }

@@ -1,5 +1,6 @@
 package scala.meta.internal.metals.debug
 import java.net.{ServerSocket, Socket}
+import java.util.Collections
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import java.util.concurrent.{CompletableFuture, TimeUnit}
 
@@ -15,11 +16,12 @@ import org.eclipse.lsp4j.debug.services.{
 import scala.concurrent.{
   ExecutionContextExecutorService,
   Future,
+  Promise,
   TimeoutException
 }
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.metals.{BuildServerConnection, Cancelable}
-import scala.util.{Failure, Try}
+import scala.util.{Failure, Success, Try}
 
 class DebugAdapterProxy(sessionFactory: DebugSession.Factory)(
     implicit val ec: ExecutionContextExecutorService
@@ -29,76 +31,158 @@ class DebugAdapterProxy(sessionFactory: DebugSession.Factory)(
 
   private val isCanceled = new AtomicBoolean(false)
   private val isRestarting = new AtomicBoolean(false)
-  @volatile private val session = new AtomicReference[DebugSession]()
+  @volatile private var session: DebugSession = _
+  private val terminatedPromise = new AtomicReference(Promise[Unit]())
+  private def terminated: Future[Unit] = terminatedPromise.get().future
+  private var initializeArgs: InitializeRequestArguments = _
 
-//  @volatile var state: State = Idle
+  override def initialize(
+      args: InitializeRequestArguments
+  ): CompletableFuture[
+    Capabilities
+  ] = {
+    this.initializeArgs = args
+    super.initialize(args).thenApply { capabilities =>
+      capabilities.setSupportsRestartRequest(true)
+      capabilities
+    }
+  }
 
   private[DebugAdapterProxy] def connect(): Future[Unit] = {
     if (isCanceled.get()) Future.unit
-    else {
-      sessionFactory.create(this).map { newSession =>
-        val oldSession = this.session.getAndSet(newSession)
-
-        if (oldSession != null) {
-          oldSession.cancel()
-        }
-
+    else
+      sessionFactory.create(this).map { newSession: DebugSession =>
+        session = newSession
+        session.start()
         if (isCanceled.get()) {
-          newSession.cancel()
+          newSession.server.cancel()
+          newSession.client.cancel()
         }
       }
+  }
+
+  override def restart(
+      args: RestartArguments
+  ): CompletableFuture[Void] = {
+    if (isRestarting.compareAndSet(false, true)) {
+      val args = new DisconnectArguments()
+      args.setTerminateDebuggee(true)
+
+      val serverDone = for {
+        _ <- super.disconnect(args).asScala
+        _ <- terminated
+        _ <- Future(session.server.cancel())
+      } yield ()
+
+      val bar = for {
+        _ <- serverDone
+        server <- sessionFactory.openServerConnection(this)
+        session = new DebugSession(server, this.session.client)
+      } yield {
+        this.session = session
+        server.start()
+
+        val foo = for {
+          _ <- server.service.initialize(initializeArgs).asScala
+          _ <- server.service.launch(Collections.emptyMap()).asScala
+          _ <- server.service
+            .configurationDone(new ConfigurationDoneArguments)
+            .asScala
+        } yield {}
+        foo.onComplete {
+          case Failure(exception) =>
+            scribe.warn(exception.getMessage)
+          case Success(value) =>
+        }
+      }
+      bar.onComplete {
+        case Failure(exception) =>
+          scribe.warn(exception.getMessage)
+          isRestarting.set(false) // TODO handle failure of the above future. otherwise it hangs
+        case Success(value) =>
+          isRestarting.set(false) // TODO handle failure of the above future. otherwise it hangs
+      }
+
+      serverDone.onComplete {
+        case Failure(exception) =>
+          scribe.warn(exception.getMessage)
+        case Success(value) =>
+      }
+      serverDone.voided
+    } else {
+      Future.unit.voided // do nothing if already restarting
     }
   }
 
   override def disconnect(
       args: DisconnectArguments
   ): CompletableFuture[Void] = {
-    if (args.getRestart) {
-      if (isRestarting.compareAndSet(false, true)) {
-        args.setRestart(false) // since metals is handling the restarting
-
-        val serverSessionTerminated = {
-          val terminated = this.session.get().terminated.future
-          terminated
-            .withTimeout(10, TimeUnit.SECONDS)
-            .recover { case _: TimeoutException => () }
-        }
-
-        //          super
-//            .disconnect(args)
-//            .asScala
-//            .flatMap(_ => this.session.get().terminated.future)
-//            .withTimeout(10, TimeUnit.SECONDS)
-//            .recover { case _: TimeoutException => () }
-
-        // accept new connection in the background
-        connect().onComplete(_ => {
-          isRestarting.set(false)
-        })
-
-        serverSessionTerminated.voided
-      } else {
-        Future.unit.voided // do nothing if already restarting
-      }
+    if (false) { // TODO use args.getRestart after 22.08
+//      if (isRestarting.compareAndSet(false, true)) {
+//
+//        // TODO uncomment after after 22.08 : args.setRestart(false) // since metals is handling the restarting
+//        val oldSession = session
+//        val terminated =
+//          this.terminated.withTimeout(10, TimeUnit.SECONDS)
+//
+//        terminated
+//          .flatMap(_ => {
+//            val newSession = for {
+//              client <- sessionFactory.awaitClientConnection(this)
+//              server <- sessionFactory.openServerConnection(this)
+//            } yield new DebugSession(server, client)
+//
+//            newSession.map { s =>
+//              session = s
+//              session.start()
+//            }
+//          })
+//          .onComplete {
+//            case Failure(exception) =>
+//              scribe.warn(exception.getMessage)
+//              cancel()
+//            case Success(value) =>
+//              isRestarting.set(false)
+//          }
+//
+//        super.disconnect(args)
+//      } else {
+//      }
+      Future.unit.voided // do nothing if already restarting
     } else {
       super.disconnect(args)
     }
   }
 
   override def terminated(args: TerminatedEventArguments): Unit = {
-    if (isRestarting.get()) {
-      args.setRestart(true)
+    try {
+      if (!isRestarting.get()) {
+        super.terminated(args) // TODO comment
+      }
+    } finally {
+      val previousPromise = terminatedPromise.getAndSet(Promise())
+      previousPromise.success(())
     }
-
-    try super.terminated(args)
-    finally session.get().terminated.success(())
   }
 
   def cancel(): Unit = {
     if (isCanceled.compareAndSet(false, true)) {
-      val session = this.session.get()
+      val session = this.session
       if (session != null) {
-        session.cancel()
+        val args = new DisconnectArguments
+        args.setTerminateDebuggee(true)
+
+        val serverDone = for {
+          _ <- super.disconnect(args).asScala
+          _ <- this.terminated
+        } yield ()
+
+        serverDone
+          .withTimeout(15, TimeUnit.SECONDS)
+          .onComplete(_ => {
+            session.server.cancel()
+            session.client.cancel()
+          })
       }
     }
   }
@@ -106,33 +190,23 @@ class DebugAdapterProxy(sessionFactory: DebugSession.Factory)(
   override protected[this] def notifyClient(
       f: IDebugProtocolClient => Unit
   ): Unit = {
-    val session = this.session.get()
     if (session != null) {
-      f(session)
+      f(session.client.service)
     }
   }
 
   override protected[this] def requestFromServer[A](
       f: IDebugProtocolServer => CompletableFuture[A]
   ): CompletableFuture[A] = {
-    val session = this.session.get()
     if (session != null) {
-      f(session)
+      f(session.server.service)
     } else {
       Future.failed(new IllegalStateException("No debug session open")).asJava
     }
   }
-
 }
 
 object DebugAdapterProxy {
-  sealed trait State
-  final case object Idle extends State
-  final case object Canceled extends State
-  final case class Running(session: DebugSession) extends State
-  final case class Restarting(previousSessionTerminated: Future[Unit])
-      extends State
-
   def create(
       buildServer: => Option[BuildServerConnection],
       proxyServer: ServerSocket,

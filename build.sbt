@@ -142,7 +142,7 @@ lazy val V = new {
   val scalameta = "4.2.2"
   val semanticdb = scalameta
   val bsp = "2.0.0-M4+1-4ddca89a"
-  val bloop = "1.3.2+186-adc9fa80+20190809-1203"
+  val bloop = "1.3.2+186-adc9fa80+20190820-0954"
   val sbtBloop = bloop
   val gradleBloop = bloop
   val scalafmt = "2.0.1"
@@ -161,6 +161,7 @@ skip.in(publish) := true
 lazy val interfaces = project
   .in(file("mtags-interfaces"))
   .settings(
+    resolvers += Resolver.mavenLocal,
     moduleName := "mtags-interfaces",
     autoScalaLibrary := false,
     libraryDependencies ++= List(
