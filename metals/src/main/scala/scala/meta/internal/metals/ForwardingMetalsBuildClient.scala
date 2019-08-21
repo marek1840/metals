@@ -6,7 +6,6 @@ import java.util.concurrent.ConcurrentHashMap
 import ch.epfl.scala.bsp4j._
 import ch.epfl.scala.{bsp4j => b}
 import com.google.gson.JsonObject
-import org.eclipse.lsp4j.ExecuteCommandParams
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.{lsp4j => l}
 
@@ -152,12 +151,7 @@ final class ForwardingMetalsBuildClient(
               treeViewProvider().onBuildTargetDidCompile(report.getTarget())
 
               if (isCurrentlyOpened(target)) {
-                languageClient.metalsExecuteClientCommand(
-                  new ExecuteCommandParams(
-                    ClientCommands.CompilationDone.id,
-                    Collections.emptyList()
-                  )
-                )
+                languageClient.refreshModel()
               }
             }
             hasReportedError.remove(target)

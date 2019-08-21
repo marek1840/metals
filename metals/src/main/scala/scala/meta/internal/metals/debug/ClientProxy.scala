@@ -3,41 +3,41 @@ import org.eclipse.lsp4j.debug._
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 
 trait ClientProxy extends IDebugProtocolClient {
-  protected[this] def notifyClient(f: IDebugProtocolClient => Unit): Unit
+  protected def client: IDebugProtocolClient
 
   override def initialized(): Unit =
-    notifyClient(_.initialized())
+    client.initialized()
 
   override def stopped(args: StoppedEventArguments): Unit =
-    notifyClient(_.stopped(args))
+    client.stopped(args)
 
   override def continued(args: ContinuedEventArguments): Unit =
-    notifyClient(_.continued(args))
+    client.continued(args)
 
   override def exited(args: ExitedEventArguments): Unit =
-    notifyClient(_.exited(args))
+    client.exited(args)
 
   override def terminated(args: TerminatedEventArguments): Unit =
-    notifyClient(_.terminated(args))
+    client.terminated(args)
 
   override def thread(args: ThreadEventArguments): Unit =
-    notifyClient(_.thread(args))
+    client.thread(args)
 
   override def output(args: OutputEventArguments): Unit =
-    notifyClient(_.output(args))
+    client.output(args)
 
   override def breakpoint(args: BreakpointEventArguments): Unit =
-    notifyClient(_.breakpoint(args))
+    client.breakpoint(args)
 
   override def module(args: ModuleEventArguments): Unit =
-    notifyClient(_.module(args))
+    client.module(args)
 
   override def loadedSource(args: LoadedSourceEventArguments): Unit =
-    notifyClient(_.loadedSource(args))
+    client.loadedSource(args)
 
   override def process(args: ProcessEventArguments): Unit =
-    notifyClient(_.process(args))
+    client.process(args)
 
   override def capabilities(args: CapabilitiesEventArguments): Unit =
-    notifyClient(_.capabilities(args))
+    client.capabilities(args)
 }

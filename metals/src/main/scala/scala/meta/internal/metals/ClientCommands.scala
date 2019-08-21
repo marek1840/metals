@@ -73,11 +73,12 @@ object ClientCommands {
     """.stripMargin
   )
 
-  // TODO
-  val CompilationDone = Command(
-    "metals-compilation-done",
-    "",
-    ""
+  val RefreshModel = Command(
+    "metals-model-refresh",
+    "Refresh model",
+    "Notifies the client that the model has been updated " +
+      "and it should be refreshed " +
+      "(e.g. by resending code lens request)"
   )
 
   val GotoLocation = Command(
@@ -85,7 +86,7 @@ object ClientCommands {
     "Goto location",
     "Move the cursor focus to the provided location",
     """|A LSP `Location` object with `uri` and `range` fields.
-       |Example: 
+       |Example:
        |```json
        |{
        |  "uri": "file://path/to/Definition.scala",
@@ -105,6 +106,6 @@ object ClientCommands {
     FocusDiagnostics,
     GotoLocation,
     EchoCommand,
-    CompilationDone
+    RefreshModel
   )
 }

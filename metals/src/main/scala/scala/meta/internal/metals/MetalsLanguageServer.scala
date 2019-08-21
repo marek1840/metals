@@ -1,6 +1,6 @@
 package scala.meta.internal.metals
 
-import java.net.{ServerSocket, URI, URLClassLoader}
+import java.net.{InetSocketAddress, ServerSocket, Socket, URI, URLClassLoader}
 import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.file._
 import java.util
@@ -12,13 +12,7 @@ import java.util.concurrent.{
   TimeUnit
 }
 
-import ch.epfl.scala.bsp4j.{
-  DependencySourcesParams,
-  DependencySourcesResult,
-  ScalacOptionsParams,
-  SourcesParams,
-  BuildTargetIdentifier
-}
+import ch.epfl.scala.bsp4j.{Location => _, MessageType => _, _}
 import com.google.common.net.InetAddresses
 import com.google.gson.{JsonElement, JsonObject, JsonPrimitive}
 import io.methvin.watcher.DirectoryChangeEvent
@@ -36,7 +30,7 @@ import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.meta.internal.builds.{BuildTool, BuildTools}
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.MetalsEnrichments._
-import scala.meta.internal.metals.debug.DebugAdapterProxy
+import scala.meta.internal.metals.debug.{DebugAdapterProxy, DebugProxy}
 import scala.meta.internal.mtags._
 import scala.meta.internal.semanticdb.Scala._
 import scala.meta.internal.tvp._
@@ -46,7 +40,6 @@ import scala.meta.pc.CancelToken
 import scala.meta.tokenizers.TokenizeException
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success}
-//import scala.meta.internal.metals.debug.DebugAdapterProxy.DebugAdapter
 
 class MetalsLanguageServer(
     ec: ExecutionContextExecutorService,
@@ -1112,10 +1105,20 @@ class MetalsLanguageServer(
             case Success(parameters) =>
               val proxyServer = new ServerSocket(0)
 
-              DebugAdapterProxy
-                .create(buildServer, proxyServer, parameters)
+              def debugSession(): Future[URI] = {
+                buildServer match {
+                  case None =>
+                    Future.failed(new IllegalStateException("No build server"))
+                  case Some(connection) =>
+                    connection.startDebugSession(parameters).asScala
+                }
+              }
+
+              DebugProxy
+                .create(proxyServer, debugSession)
                 .map(cancelables.add)
                 .onTimeout(5, TimeUnit.SECONDS)(
+                  // TODO is it even necessary?
                   languageClient.showMessage(
                     MessageType.Error,
                     "Could not open a debug session"
@@ -1523,6 +1526,8 @@ class MetalsLanguageServer(
     ) {
       indexDependencySources(i.dependencySources)
     }
+
+    languageClient.refreshModel()
   }
 
   private def indexDependencySources(

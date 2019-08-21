@@ -1,6 +1,6 @@
 package scala.meta.internal.metals
 
-import java.net.URI
+import java.net.{Socket, URI}
 import java.nio.charset.StandardCharsets
 import java.nio.file._
 import java.util
@@ -529,5 +529,4 @@ object MetalsEnrichments
     def findFirstTrailing(predicate: Token => Boolean): Option[Token] =
       trailingTokens.find(predicate)
   }
-
 }
