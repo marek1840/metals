@@ -6,7 +6,6 @@ import java.util.concurrent.ExecutorService
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.debug.DebugLauncher
 
-import scala.meta.internal.metals.GlobalTrace
 import scala.reflect.{ClassTag, classTag}
 
 object DebugProtocolProxy {
@@ -15,7 +14,7 @@ object DebugProtocolProxy {
   ): Launcher.Builder[A] = {
     new DebugLauncher.Builder[A]
       .setRemoteInterface(classTag[A].runtimeClass.asInstanceOf[Class[A]])
-      .validateMessages(false) // just a proxy,
+      .validateMessages(true)
       .setExecutorService(executor)
       .setInput(socket.getInputStream)
       .setOutput(socket.getOutputStream)

@@ -1,7 +1,8 @@
 package scala.meta.internal.metals.debug
 import java.net.{InetSocketAddress, ServerSocket, Socket, URI}
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-import java.util.concurrent.{CompletableFuture, TimeUnit}
 
 import org.eclipse.lsp4j.debug._
 
@@ -19,21 +20,18 @@ import scala.meta.internal.metals.debug.Foo.{
   ServerConnection
 }
 
-abstract class DebugProxy(implicit ec: ExecutionContext)
+final class DebugProxy(implicit ec: ExecutionContext)
     extends ClientProxy
     with ServerProxy
     with Cancelable {
+
   private val isClosed = new AtomicBoolean(false)
   private val isRestarting = new AtomicBoolean(false)
+  private val terminated = new AtomicReference(Promise[Unit]())
 
-  /**
-   * Promise fulfilled once the debug adapter is fully configured.
-   * Used in restarting to signal that the reconnected server is set up
-   */
-  private val configured = new AtomicReference(Promise[Unit]())
-
-  override protected def client: ClientConnection
-  override protected def server: RemoteServer
+  // actual endpoints. Set in the [[DebugProxy.apply]]
+  protected var client: ClientConnection = _
+  protected var server: RemoteServer = _
 
   override def initialize(
       args: InitializeRequestArguments
@@ -46,26 +44,26 @@ abstract class DebugProxy(implicit ec: ExecutionContext)
 
   // TODO comment why synchronized (only one restart at a time)
   // TODO explain isRestarting in context of the notifications send from server
-  override def restart(args: RestartArguments): CompletableFuture[Void] =
-    synchronized {
-      // TODO explain
-      isRestarting.set(true)
+  override def restart(args: RestartArguments): CompletableFuture[Void] = {
+    // vscode refreshes the debug console immediately,
+    // leading to stale output being printed there
+    client.disableOutput()
+    // TODO explain
+    isRestarting.set(true)
 
-      val restarted = for {
-        _ <- disconnected()
-        _ <- terminated.get().future
-        _ <- server.reconnect
-        _ <- configurationDone(new ConfigurationDoneArguments).asScala
-      } yield {
-        // TODO explain resetting the state
-        terminated.set(Promise())
-        isRestarting.set(false)
-      }
-
-      restarted.voided
+    val restarted = for {
+      _ <- disconnected()
+      _ <- terminated.get().future
+      _ <- server.reconnect
+    } yield {
+      // TODO explain resetting the state
+      terminated.set(Promise())
+      isRestarting.set(false)
+      client.enableOutput()
     }
 
-  private val terminated = new AtomicReference(Promise[Unit]())
+    restarted.voided
+  }
 
   // TODO explain terminated promise?
   // TODO explain isRestarting condition
@@ -76,28 +74,20 @@ abstract class DebugProxy(implicit ec: ExecutionContext)
       }
     } finally {
       terminated.get().success(())
-//      val promise = terminated.getAndSet(Promise())
-//      promise.success(())
-    }
-  }
-
-  override def configurationDone(
-      args: ConfigurationDoneArguments
-  ): CompletableFuture[Void] = {
-    try super.configurationDone(args)
-    finally {
-//      configured.get().success(())
     }
   }
 
   def cancel(): Unit = {
     if (isClosed.compareAndSet(false, true)) {
-      for {
-        _ <- disconnected()
-        _ <- this.terminated.get().future
-      } yield {
-        Cancelable.cancelAll(server, client)
-      }
+      val terminated =
+        for {
+          _ <- disconnected()
+          _ <- this.terminated.get().future
+        } yield ()
+
+      terminated
+        .withTimeout(10, SECONDS)
+        .onComplete(_ => Cancelable.cancelAll(server, client))
     }
   }
 
@@ -113,50 +103,32 @@ object DebugProxy {
       proxyServer: ServerSocket,
       debugSession: () => Future[URI]
   )(implicit ec: ExecutionContextExecutorService): Future[DebugProxy] = {
-    def connectToServer(): Future[Socket] = {
+    val proxy = new DebugProxy()
+
+    val connectToServer = () => {
       debugSession().map { uri =>
         val socket = new Socket()
         val address = new InetSocketAddress(uri.getHost, uri.getPort)
-        val timeout = TimeUnit.SECONDS.toMillis(10)
+        val timeout = SECONDS.toMillis(10)
         socket.connect(address, timeout.toInt)
 
-        socket
+        ServerConnection.open(socket, proxy)
       }
     }
 
-    DebugProxy(
-      () => Future(proxyServer.accept()),
-      connectToServer
-    )
-  }
-
-  def apply(
-      clientConnection: () => Future[Socket],
-      serverConnection: () => Future[Socket]
-  )(implicit ec: ExecutionContextExecutorService): Future[DebugProxy] = {
-
-    val clientRef = new AtomicReference[ClientConnection]()
-    val serverRef = new AtomicReference[RemoteServer]()
-
-    val proxy = new DebugProxy {
-      override def client: ClientConnection = clientRef.get()
-      override def server: RemoteServer = serverRef.get()
+    val awaitClientConnection = () => {
+      Future(proxyServer.accept()).map(ClientConnection.open(_, proxy))
     }
 
-    val configuration = new Configuration
-    def connectToServer(): Future[ServerConnection] =
-      serverConnection().map(ServerConnection.open(_, proxy, configuration))
-
     for {
-      client <- clientConnection().map(ClientConnection.open(_, proxy))
+      client <- awaitClientConnection()
       initialServerConnection <- connectToServer()
       server = new RemoteServer(connectToServer, initialServerConnection)
     } yield {
-      clientRef.set(client)
-      initialServerConnection.start()
+      proxy.client = client
+      proxy.server = server
 
-      // client initializes communication, so it must be started last
-      serverRef.set(server)
+      initialServerConnection.start()
       client.start()
 
       proxy

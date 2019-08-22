@@ -105,7 +105,7 @@ object BuildTargetClasses {
     val testSuites = new TrieMap[String, String]()
 
     def whenReady: Future[Classes] = {
-      ready.map(_.future)
+      Future.successful(this)
     }
 
     def invalidate(): Unit = {

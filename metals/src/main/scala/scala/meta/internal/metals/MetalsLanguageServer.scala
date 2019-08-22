@@ -1115,7 +1115,7 @@ class MetalsLanguageServer(
               }
 
               DebugProxy
-                .create(proxyServer, debugSession)
+                .create(proxyServer, () => debugSession())
                 .map(cancelables.add)
                 .onTimeout(5, TimeUnit.SECONDS)(
                   // TODO is it even necessary?
