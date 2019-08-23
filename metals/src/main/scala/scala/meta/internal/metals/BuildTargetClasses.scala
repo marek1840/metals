@@ -4,7 +4,7 @@ import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import ch.epfl.scala.{bsp4j => b}
 
 import scala.collection.concurrent.TrieMap
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.meta.internal.metals.BuildTargetClasses.Classes
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.semanticdb.Scala.{Descriptor, Symbols}
@@ -18,16 +18,13 @@ final class BuildTargetClasses(
   private val index =
     new TrieMap[b.BuildTargetIdentifier, Classes]()
 
-  val onStartedCompilation: BatchedFunction[b.BuildTargetIdentifier, Unit] =
-    BatchedFunction.fromFunction(invalidateClassesFor)
+//  val onStartedCompilation: BatchedFunction[b.BuildTargetIdentifier, Unit] =
+//    BatchedFunction.fromFunction(invalidateClassesFor)
 
-  val onFinishedCompilation: BatchedFunction[b.BuildTargetIdentifier, Unit] =
+  val rebuildIndex: BatchedFunction[b.BuildTargetIdentifier, Unit] =
     BatchedFunction.fromFuture(fetchClasses)
 
-  def compiledClasses(target: b.BuildTargetIdentifier): Future[Classes] =
-    classesOf(target).whenReady
-
-  private def classesOf(target: BuildTargetIdentifier): Classes = {
+  def classesOf(target: BuildTargetIdentifier): Classes = {
     index.getOrElseUpdate(target, new Classes)
   }
 
@@ -44,8 +41,6 @@ final class BuildTargetClasses(
       case Some(connection) =>
         val targetsList = targets.asJava
 
-        targetsList.forEach(classesOf(_).clear())
-
         val updateMainClasses = connection
           .mainClasses(new b.ScalaMainClassesParams(targetsList))
           .thenAccept(cacheMainClasses)
@@ -59,10 +54,7 @@ final class BuildTargetClasses(
         for {
           _ <- updateMainClasses
           _ <- updateTestSuites
-        } yield {
-          targets.foreach(classesOf(_).setReady())
-        }
-
+        } yield ()
       case None =>
         Future.successful(())
     }
@@ -99,24 +91,10 @@ final class BuildTargetClasses(
 
 object BuildTargetClasses {
   final class Classes {
-    private val ready = new Synchronized(Promise[Classes]())
-
     val mainClasses = new TrieMap[String, b.ScalaMainClass]()
     val testSuites = new TrieMap[String, String]()
 
-    def whenReady: Future[Classes] = {
-      Future.successful(this)
-    }
-
     def invalidate(): Unit = {
-      ready.transform { promise =>
-        if (promise.isCompleted) Promise() else promise
-      }
-    }
-
-    def setReady(): Unit = ready.transform(_.success(this))
-
-    def clear(): Unit = {
       mainClasses.clear()
       testSuites.clear()
     }

@@ -102,9 +102,6 @@ final class ForwardingMetalsBuildClient(
           val name = info.getDisplayName
           val promise = Promise[CompileReport]()
           val isNoOp = params.getMessage.startsWith("Start no-op compilation")
-          if (!isNoOp) {
-            buildTargetClasses.onStartedCompilation(task.getTarget)
-          }
           val compilation = Compilation(new Timer(time), promise, isNoOp)
           compilations(task.getTarget) = compilation
 
@@ -142,17 +139,18 @@ final class ForwardingMetalsBuildClient(
             scribe.info(s"time: compiled $name in ${compilation.timer}")
           }
           if (isSuccess) {
-            buildTargetClasses.onFinishedCompilation(target)
+            buildTargetClasses
+              .rebuildIndex(target)
+              .filter(_ => !compilation.isNoOp)
+              .filter(_ => isCurrentlyOpened(target))
+              .foreach(_ => languageClient.refreshModel())
+
             if (hasReportedError.contains(target)) {
               // Only report success compilation if it fixes a previous compile error.
               statusBar.addMessage(message)
             }
             if (!compilation.isNoOp) {
               treeViewProvider().onBuildTargetDidCompile(report.getTarget())
-
-              if (isCurrentlyOpened(target)) {
-                languageClient.refreshModel()
-              }
             }
             hasReportedError.remove(target)
           } else {

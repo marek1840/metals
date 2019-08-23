@@ -1,6 +1,6 @@
 package scala.meta.internal.metals
 
-import java.net.{InetSocketAddress, ServerSocket, Socket, URI, URLClassLoader}
+import java.net.{ServerSocket, URI, URLClassLoader}
 import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.file._
 import java.util
@@ -97,7 +97,6 @@ class MetalsLanguageServer(
   private val definitionIndex = newSymbolIndex()
   private val symbolDocs = new Docstrings(definitionIndex)
   var buildServer = Option.empty[BuildServerConnection]
-  private val buildTargetClasses = new BuildTargetClasses(() => buildServer)
   private val openTextDocument = new AtomicReference[AbsolutePath]()
   private val openDocumentBuildTarget =
     new AtomicReference[BuildTargetIdentifier]()
@@ -106,6 +105,7 @@ class MetalsLanguageServer(
   private val messages = new Messages(config.icons)
   private val languageClient =
     new DelegatingLanguageClient(NoopLanguageClient, config)
+  private val buildTargetClasses = new BuildTargetClasses(() => buildServer)
   var userConfig = UserConfiguration()
   val buildTargets: BuildTargets = new BuildTargets()
   val compilations: Compilations = new Compilations(
@@ -683,9 +683,9 @@ class MetalsLanguageServer(
       case Some(change) =>
         val path = params.getTextDocument.getUri.toAbsolutePath
 
-        buildTargets.inverseSources(path).foreach { target =>
-          buildTargetClasses.onStartedCompilation(target)
-        }
+//        buildTargets.inverseSources(path).foreach { target =>
+//          buildTargetClasses.onStartedCompilation(target)
+//        }
 
         buffers.put(path, change.getText)
         diagnostics.didChange(path)
@@ -989,9 +989,10 @@ class MetalsLanguageServer(
   def codeLens(
       params: CodeLensParams
   ): CompletableFuture[util.List[CodeLens]] =
-    CancelTokens.future { token =>
+    CancelTokens.apply { token =>
       codeLensProvider
         .findLenses(params.getTextDocument.getUri.toAbsolutePath)
+        .asJava
     }
 
   @JsonRequest("textDocument/foldingRange")
@@ -1527,7 +1528,17 @@ class MetalsLanguageServer(
       indexDependencySources(i.dependencySources)
     }
 
-    languageClient.refreshModel()
+    val openDocument = openTextDocument.get()
+    if (openDocument != null) {
+      buildTargets
+        .inverseSources(openDocument)
+        .foreach(openDocumentBuildTarget.set)
+    }
+
+    val targets = buildTargets.all.map(_.info.getId).toSeq
+    buildTargetClasses
+      .rebuildIndex(targets)
+      .foreach(_ => languageClient.refreshModel())
   }
 
   private def indexDependencySources(

@@ -24,23 +24,18 @@ final class CodeLensProvider(
     compilations: Compilations,
     semanticdbs: Semanticdbs
 )(implicit ec: ExecutionContext) {
-  def findLenses(path: AbsolutePath): Future[util.List[l.CodeLens]] = {
-    buildTargets.indexed.flatMap { _ =>
-      buildTargets.inverseSources(path) match {
-        case Some(buildTarget) =>
-          if (compilations.isCurrentlyCompiling(buildTarget)) {
-            // code lenses will be refreshed after compilation
-            CodeLensProvider.Empty
-          } else {
-            for {
-              classes <- buildTargetClasses.compiledClasses(buildTarget)
-              lenses = findLenses(path, buildTarget, classes)
-            } yield lenses.asJava
-          }
-        case _ =>
-          CodeLensProvider.Empty
+  // code lenses will be refreshed after compilation or when workspace gets indexed
+  def findLenses(path: AbsolutePath): Seq[l.CodeLens] = {
+    val lenses = buildTargets
+      .inverseSources(path)
+      .filterNot(compilations.isCurrentlyCompiling)
+      .map { buildTarget =>
+        val classes = buildTargetClasses.classesOf(buildTarget)
+        val lenses = findLenses(path, buildTarget, classes)
+        lenses
       }
-    }
+
+    lenses.getOrElse(Nil)
   }
 
   private def findLenses(
@@ -55,6 +50,7 @@ final class CodeLensProvider(
 
         for {
           occurrence <- textDocument.occurrences
+          if occurrence.role.isDefinition
           symbol = occurrence.symbol
           commands = {
             val main = classes.mainClasses
@@ -80,8 +76,7 @@ final class CodeLensProvider(
 }
 
 object CodeLensProvider {
-  val Empty: Future[util.List[CodeLens]] =
-    Future.successful(emptyList[l.CodeLens]())
+  val Empty: util.List[CodeLens] = emptyList()
 
   sealed trait CommandFactory[A] {
     protected def names: List[String]
