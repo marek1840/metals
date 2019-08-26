@@ -10,6 +10,8 @@ object DebugAdapterProxy {
     arguments match {
       case Seq(params: JsonObject) =>
         Try(gson.fromJson(params, classOf[b.DebugSessionParams]))
+      case Seq(params: b.DebugSessionParams) =>
+        Try(params)
       case _ =>
         Failure(new IllegalArgumentException(s"arguments: $arguments"))
     }

@@ -76,8 +76,6 @@ final class CodeLensProvider(
 }
 
 object CodeLensProvider {
-  val Empty: util.List[CodeLens] = emptyList()
-
   sealed trait CommandFactory[A] {
     protected def names: List[String]
     protected def dataKind: String

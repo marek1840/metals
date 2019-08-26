@@ -22,7 +22,7 @@ import scala.meta.internal.mtags.Symbol
  *
  * To keep the tests readable, we only include the filename of the definition position and leave it
  * to separate test suites to assert that the range positions are accurate.
- */ 
+ */
 object DefinitionSuite extends DirectoryExpectSuite("definition") {
   override def testCases(): List[ExpectTestCase] = {
     if (isWindows) {

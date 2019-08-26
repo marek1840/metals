@@ -41,3 +41,9 @@ trait ClientProxy extends IDebugProtocolClient {
   override def capabilities(args: CapabilitiesEventArguments): Unit =
     client.capabilities(args)
 }
+
+object ClientProxy {
+  def apply(delegatee: IDebugProtocolClient): ClientProxy = new ClientProxy {
+    val client: IDebugProtocolClient = delegatee
+  }
+}

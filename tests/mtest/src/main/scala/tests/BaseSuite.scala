@@ -156,7 +156,11 @@ class BaseSuite extends TestSuite {
   ): Unit = {
     test(name) {
       val fut = run
-      Await.result(fut, maxDuration)
+      try Await.result(fut, maxDuration)
+      catch {
+        case e: Throwable =>
+          throw e
+      }
     }
   }
 

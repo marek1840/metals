@@ -1102,9 +1102,14 @@ class MetalsLanguageServer(
         val uri =
           DebugAdapterProxy.parseParameters(params.getArguments.asScala) match {
             case Failure(exception) =>
-              Failure(exception)
+              Future.failed(exception)
             case Success(parameters) =>
               val proxyServer = new ServerSocket(0)
+              val proxyURI = {
+                val host = InetAddresses.toUriString(proxyServer.getInetAddress)
+                val port = proxyServer.getLocalPort
+                URI.create(s"tcp://$host:$port")
+              }
 
               def debugSession(): Future[URI] = {
                 buildServer match {
@@ -1118,6 +1123,7 @@ class MetalsLanguageServer(
               DebugProxy
                 .create(proxyServer, () => debugSession())
                 .map(cancelables.add)
+                .map(_ => proxyURI)
                 .onTimeout(5, TimeUnit.SECONDS)(
                   // TODO is it even necessary?
                   languageClient.showMessage(
@@ -1125,17 +1131,9 @@ class MetalsLanguageServer(
                     "Could not open a debug session"
                   )
                 )
-
-              val proxyURI = {
-                val host = InetAddresses.toUriString(proxyServer.getInetAddress)
-                val port = proxyServer.getLocalPort
-                URI.create(s"tcp://$host:$port")
-              }
-
-              Success(proxyURI)
           }
 
-        uri.toFuture.asJavaObject
+        uri.asJavaObject
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject
