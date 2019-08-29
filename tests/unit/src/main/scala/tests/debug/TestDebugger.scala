@@ -1,32 +1,32 @@
 package tests.debug
-import java.net.{InetSocketAddress, Socket, SocketException, URI}
 import java.lang.Thread
+import java.net.{InetSocketAddress, Socket, URI}
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 
-import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
 import org.eclipse.lsp4j.debug._
+import org.eclipse.lsp4j.debug.services.IDebugProtocolClient
+import tests.debug.TestDebugger.Prefix
 
 import scala.collection.mutable
 import scala.concurrent.{
   ExecutionContext,
   ExecutionContextExecutorService,
   Future,
-  Promise,
-  TimeoutException
+  Promise
 }
-import scala.meta.internal.metals.Cancelable
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.metals.debug.{ClientProxy, ServerConnection}
 
 final class TestDebugger(implicit ec: ExecutionContext)
     extends IDebugProtocolClient
-    with Cancelable {
+    with AutoCloseable {
   protected var server: ServerConnection = _
 
   private val terminationPromise = Promise[Unit]()
   private val exitedPromise = Promise[Unit]()
   private val outputs = mutable.Map.empty[String, StringBuilder]
+  private val prefixes = mutable.Set.empty[Prefix]
 
   def initialize: Future[Capabilities] = {
     val arguments = new InitializeRequestArguments
@@ -48,16 +48,34 @@ final class TestDebugger(implicit ec: ExecutionContext)
     } yield ()
   }
 
+  def disconnect: Future[Unit] = {
+    server.disconnect(new DisconnectArguments).asScala.ignoreValue
+  }
+
+  /**
+   * Not waiting for exited because TODO
+   */
   def awaitCompletion: Future[Unit] = {
     for {
       _ <- terminated
-      _ <- exited
-      _ <- server.listening.onTimeout(20, TimeUnit.SECONDS)(this.cancel())
+      _ <- server.listening.onTimeout(20, TimeUnit.SECONDS)(this.close())
     } yield ()
   }
 
   def terminated: Future[Unit] = terminationPromise.future
   def exited: Future[Unit] = exitedPromise.future
+
+  def awaitOutput(expected: String): Future[Unit] = {
+    val prefix = Prefix(expected, Promise())
+    prefixes += prefix
+
+    if (output.startsWith(expected)) {
+      prefix.promise.success(())
+      prefixes -= prefix
+    }
+
+    prefix.promise.future
+  }
 
   ////////////////////////////////////////////////////////
   override def terminated(args: TerminatedEventArguments): Unit = {
@@ -74,14 +92,23 @@ final class TestDebugger(implicit ec: ExecutionContext)
 
   override def output(args: OutputEventArguments): Unit = {
     output(args.getCategory).append(args.getOutput)
+    val matched = prefixes.filter(prefix => output.startsWith(prefix.pattern))
+    matched.foreach { prefix =>
+      prefixes.remove(prefix)
+      prefix.promise.success(())
+    }
   }
 
   private def output(arg: String): mutable.StringBuilder = {
     outputs.getOrElseUpdate(arg, new mutable.StringBuilder())
   }
 
-  override def cancel(): Unit = {
+  override def close(): Unit = {
     server.cancel()
+    prefixes.foreach { prefix =>
+      val message = s"Output did not start with ${prefix.pattern}"
+      prefix.promise.failure(new IllegalStateException(message))
+    }
   }
 }
 
@@ -96,9 +123,11 @@ object TestDebugger {
 
     val connection = ServerConnection.open(socket, ClientProxy(debugger))
     debugger.server = connection
-
-    Runtime.getRuntime.addShutdownHook(new Thread(() => debugger.cancel()))
+    debugger.server.listening.onComplete(_ => debugger.close())
+    Runtime.getRuntime.addShutdownHook(new Thread(() => debugger.close()))
 
     debugger
   }
+
+  final case class Prefix(pattern: String, promise: Promise[Unit])
 }

@@ -18,8 +18,9 @@ final class BuildTargetClasses(
   private val index =
     new TrieMap[b.BuildTargetIdentifier, Classes]()
 
-//  val onStartedCompilation: BatchedFunction[b.BuildTargetIdentifier, Unit] =
-//    BatchedFunction.fromFunction(invalidateClassesFor)
+  // TODO disable when compiling?
+  val onStartedCompilation: BatchedFunction[b.BuildTargetIdentifier, Unit] =
+    BatchedFunction.fromFunction(invalidateClassesFor)
 
   val rebuildIndex: BatchedFunction[b.BuildTargetIdentifier, Unit] =
     BatchedFunction.fromFuture(fetchClasses)

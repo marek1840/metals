@@ -30,7 +30,7 @@ import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.meta.internal.builds.{BuildTool, BuildTools}
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.metals.MetalsEnrichments._
-import scala.meta.internal.metals.debug.{DebugAdapterProxy, DebugProxy}
+import scala.meta.internal.metals.debug.DebugAdapterProxy
 import scala.meta.internal.mtags._
 import scala.meta.internal.semanticdb.Scala._
 import scala.meta.internal.tvp._
@@ -1120,7 +1120,7 @@ class MetalsLanguageServer(
                 }
               }
 
-              DebugProxy
+              DebugAdapterProxy
                 .create(proxyServer, () => debugSession())
                 .map(cancelables.add)
                 .map(_ => proxyURI)

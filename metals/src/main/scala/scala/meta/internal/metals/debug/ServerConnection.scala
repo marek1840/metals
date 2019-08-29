@@ -14,6 +14,7 @@ import scala.concurrent.{
   Promise
 }
 import scala.meta.internal.metals.{CancelableFuture, GlobalTrace}
+import scala.meta.internal.metals.debug.RemoteConnection._
 
 final class ServerConnection(
     val connection: CancelableFuture[Unit],
@@ -26,12 +27,11 @@ object ServerConnection {
   def open(socket: Socket, service: IDebugProtocolClient)(
       implicit es: ExecutionContextExecutorService
   ): ServerConnection = {
-    val launcher = DebugProtocolProxy
-      .builder[IDebugProtocolServer](socket, service)
+    val launcher = builder[IDebugProtocolServer](socket, service)
       .traceMessages(GlobalTrace.setup("dap-server"))
       .create()
 
-    val connection = RemoteConnection.start(launcher, socket)
+    val connection = start(launcher, socket)
     new ServerConnection(connection, launcher.getRemoteProxy)
   }
 }

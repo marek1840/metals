@@ -141,7 +141,7 @@ final class ForwardingMetalsBuildClient(
           if (isSuccess) {
             buildTargetClasses
               .rebuildIndex(target)
-              .filter(_ => !compilation.isNoOp)
+// TODO should this be disable or not? // .filter(_ => !compilation.isNoOp)
               .filter(_ => isCurrentlyOpened(target))
               .foreach(_ => languageClient.refreshModel())
 

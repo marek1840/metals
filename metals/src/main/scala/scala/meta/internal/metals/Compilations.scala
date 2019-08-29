@@ -90,17 +90,17 @@ final class Compilations(
   ): CancelableFuture[b.CompileResult] = {
     val params = new b.CompileParams(targets.asJava)
     targets.foreach(target => isCompiling(target) = true)
-    val compilation = connection.compile(params)
-    val task = for {
-      result <- compilation.asScala
-      _ <- Future {
-        lastCompile = isCompiling.keySet
+    val compilation = connection
+      .compile(params)
+      .whenComplete((_, error) => {
+        if (error == null) {
+          lastCompile = isCompiling.keySet
+        }
         isCompiling.clear()
-      }
-    } yield result
+      })
 
     CancelableFuture(
-      task,
+      compilation.asScala,
       Cancelable(() => compilation.cancel(false))
     )
   }

@@ -1,12 +1,15 @@
 package scala.meta.internal.metals.debug
 
 import java.net.Socket
+import java.util.concurrent.ExecutorService
 
 import org.eclipse.lsp4j.jsonrpc.Launcher
+import org.eclipse.lsp4j.jsonrpc.debug.DebugLauncher
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.metals.{Cancelable, CancelableFuture}
+import scala.reflect.{ClassTag, classTag}
 
 trait RemoteConnection extends Cancelable {
   protected def connection: CancelableFuture[Unit]
@@ -25,5 +28,17 @@ object RemoteConnection {
     val cancelable = launcher.startListening()
     val future = Future(cancelable.get()).andThen { case _ => socket.close() }
     new CancelableFuture(future.ignoreValue, () => cancelable.cancel(true))
+  }
+
+  def builder[A: ClassTag](socket: Socket, service: Any)(
+      implicit executor: ExecutorService
+  ): Launcher.Builder[A] = {
+    new DebugLauncher.Builder[A]
+      .setRemoteInterface(classTag[A].runtimeClass.asInstanceOf[Class[A]])
+      .validateMessages(true)
+      .setExecutorService(executor)
+      .setInput(socket.getInputStream)
+      .setOutput(socket.getOutputStream)
+      .setLocalService(service)
   }
 }

@@ -28,6 +28,7 @@ import scala.meta.internal.trees.Origin
 import scala.meta.internal.{semanticdb => s}
 import scala.meta.io.AbsolutePath
 import scala.meta.tokens.Token
+import scala.util.control.NonFatal
 import scala.util.{Failure, Properties, Success, Try}
 import scala.{meta => m}
 
