@@ -18,9 +18,9 @@ final class BuildTargetClasses(
   private val index =
     new TrieMap[b.BuildTargetIdentifier, Classes]()
 
-  // TODO disable when compiling?
-  val onStartedCompilation: BatchedFunction[b.BuildTargetIdentifier, Unit] =
-    BatchedFunction.fromFunction(invalidateClassesFor)
+  // TODO should it be done?
+  val invalidate: BatchedFunction[b.BuildTargetIdentifier, Unit] =
+    BatchedFunction.fromFunction(invalidateClasses)
 
   val rebuildIndex: BatchedFunction[b.BuildTargetIdentifier, Unit] =
     BatchedFunction.fromFuture(fetchClasses)
@@ -29,7 +29,7 @@ final class BuildTargetClasses(
     index.getOrElseUpdate(target, new Classes)
   }
 
-  private def invalidateClassesFor(
+  private def invalidateClasses(
       targets: Seq[b.BuildTargetIdentifier]
   ): Unit = {
     targets.foreach(classesOf(_).invalidate())

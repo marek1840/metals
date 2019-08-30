@@ -93,11 +93,12 @@ final class ForwardingMetalsBuildClient(
         }
         for {
           task <- params.asCompileTask
-          info <- buildTargets.info(task.getTarget)
+          target = task.getTarget
+          info <- buildTargets.info(target)
         } {
-          diagnostics.onStartCompileBuildTarget(task.getTarget)
+          diagnostics.onStartCompileBuildTarget(target)
           // cancel ongoing compilation for the current target, if any.
-          compilations.remove(task.getTarget).foreach(_.promise.cancel())
+          compilations.remove(target).foreach(_.promise.cancel())
 
           val name = info.getDisplayName
           val promise = Promise[CompileReport]()
@@ -141,7 +142,6 @@ final class ForwardingMetalsBuildClient(
           if (isSuccess) {
             buildTargetClasses
               .rebuildIndex(target)
-// TODO should this be disable or not? // .filter(_ => !compilation.isNoOp)
               .filter(_ => isCurrentlyOpened(target))
               .foreach(_ => languageClient.refreshModel())
 

@@ -12,7 +12,7 @@ object FuzzySuite extends BaseSuite {
         s"query '$query' is not substring of symbol '$symbol'"
       )
     }
-  }    
+  }
 
   def checkNO(query: String, symbol: String): Unit = {
     test(query) {

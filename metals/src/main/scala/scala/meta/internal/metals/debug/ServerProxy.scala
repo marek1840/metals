@@ -1,4 +1,5 @@
 package scala.meta.internal.metals.debug
+import java.util.Collections
 import java.util.concurrent.CompletableFuture
 
 import org.eclipse.lsp4j.debug._
@@ -17,10 +18,18 @@ trait ServerProxy extends IDebugProtocolServer {
   ): CompletableFuture[Capabilities] =
     server.initialize(args)
 
+  def configurationDone: CompletableFuture[Void] = {
+    configurationDone(new ConfigurationDoneArguments)
+  }
+
   override def configurationDone(
       args: ConfigurationDoneArguments
   ): CompletableFuture[Void] =
     server.configurationDone(args)
+
+  def launch: CompletableFuture[Void] = {
+    launch(Collections.emptyMap())
+  }
 
   override def launch(
       args: java.util.Map[String, AnyRef]

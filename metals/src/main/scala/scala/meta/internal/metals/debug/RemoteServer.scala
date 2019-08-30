@@ -6,6 +6,7 @@ import java.util.concurrent.{CompletableFuture, TimeUnit}
 
 import org.eclipse.lsp4j.debug.{
   Capabilities,
+  ConfigurationDoneArguments,
   DisconnectArguments,
   InitializeRequestArguments
 }
@@ -81,8 +82,8 @@ final class RemoteServer(
 
       for {
         _ <- newConnection.initialize(config.get()).asScala
-        _ <- newConnection.launch(util.Collections.emptyMap()).asScala
-        _ <- discarded
+        _ <- newConnection.launch.asScala
+        _ <- newConnection.configurationDone.asScala
       } yield ()
     }
   }

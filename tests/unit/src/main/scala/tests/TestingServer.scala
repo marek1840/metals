@@ -10,9 +10,40 @@ import java.util.Collections
 import java.util.Collections.singletonList
 import java.util.concurrent.ScheduledExecutorService
 
-import ch.epfl.scala.bsp4j.{BuildTargetIdentifier, DebugSessionParams, LaunchParameters}
+import ch.epfl.scala.{bsp4j => b}
 import com.google.gson.{JsonObject, JsonParser, JsonPrimitive}
-import org.eclipse.lsp4j.{ClientCapabilities, CodeLensParams, CompletionList, CompletionParams, DidChangeConfigurationParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentFormattingParams, DocumentOnTypeFormattingParams, DocumentSymbolParams, ExecuteCommandParams, FoldingRangeCapabilities, FoldingRangeRequestParams, FormattingOptions, InitializeParams, InitializedParams, Location, ReferenceContext, ReferenceParams, TextDocumentClientCapabilities, TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, TextEdit, VersionedTextDocumentIdentifier, WorkspaceClientCapabilities, WorkspaceFolder}
+import org.eclipse.lsp4j.{
+  ClientCapabilities,
+  CodeLensParams,
+  CompletionList,
+  CompletionParams,
+  DidChangeConfigurationParams,
+  DidChangeTextDocumentParams,
+  DidCloseTextDocumentParams,
+  DidOpenTextDocumentParams,
+  DidSaveTextDocumentParams,
+  DocumentFormattingParams,
+  DocumentOnTypeFormattingParams,
+  DocumentSymbolParams,
+  ExecuteCommandParams,
+  FoldingRangeCapabilities,
+  FoldingRangeRequestParams,
+  FormattingOptions,
+  InitializeParams,
+  InitializedParams,
+  Location,
+  ReferenceContext,
+  ReferenceParams,
+  TextDocumentClientCapabilities,
+  TextDocumentContentChangeEvent,
+  TextDocumentIdentifier,
+  TextDocumentItem,
+  TextDocumentPositionParams,
+  TextEdit,
+  VersionedTextDocumentIdentifier,
+  WorkspaceClientCapabilities,
+  WorkspaceFolder
+}
 import org.eclipse.{lsp4j => l}
 import org.scalactic.source.Position
 import tests.MetalsTestEnrichments._
@@ -248,9 +279,9 @@ final class TestingServer(
       kind: String,
       parameter: Any
   ): Future[TestDebugger] = {
-    val params = new DebugSessionParams(
-      singletonList(new BuildTargetIdentifier(buildTarget(a))),
-      new LaunchParameters(kind, parameter)
+    val params = new b.DebugSessionParams(
+      singletonList(new b.BuildTargetIdentifier(buildTarget(a))),
+      new b.LaunchParameters(kind, parameter)
     )
 
     executeCommand(ServerCommands.OpenDebugSession.id, params)
