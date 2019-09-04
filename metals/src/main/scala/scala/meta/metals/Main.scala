@@ -2,15 +2,23 @@ package scala.meta.metals
 
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
+
+import org.eclipse.lsp4j.MessageType
+import org.eclipse.lsp4j.MessageType.Warning
 import org.eclipse.lsp4j.jsonrpc.Launcher
+
 import scala.concurrent.ExecutionContext
-import scala.meta.internal.metals.GlobalTrace
-import scala.meta.internal.metals.MetalsLanguageClient
-import scala.meta.internal.metals.MetalsLanguageServer
-import scala.meta.internal.metals.MetalsServerConfig
-import scala.meta.internal.metals.ConfiguredLanguageClient
+import scala.meta.internal.metals.{
+  ConfiguredLanguageClient,
+  Embedded,
+  GlobalTrace,
+  JavaDebugInterface,
+  MetalsLanguageClient,
+  MetalsLanguageServer,
+  MetalsServerConfig
+}
+import scala.util.{Failure, Success}
 import scala.util.control.NonFatal
-import scala.meta.internal.metals.Embedded
 
 object Main {
   def main(args: Array[String]): Unit = {
@@ -41,6 +49,16 @@ object Main {
       val underlyingClient = launcher.getRemoteProxy
       val client = new ConfiguredLanguageClient(underlyingClient, config)(ec)
       server.connectToLanguageClient(client)
+
+      JavaDebugInterface.load match {
+        case Success(_) =>
+          scribe.debug(s"Java Debug Interface is enabled")
+        case Failure(e) =>
+          scribe.warn(
+            s"Java Debug Interface not available due to: ${e.getMessage}"
+          )
+      }
+
       launcher.startListening().get()
     } catch {
       case NonFatal(e) =>

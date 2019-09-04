@@ -1,9 +1,9 @@
 package scala.meta.internal.metals
 import scala.meta.internal.metals.MetalsEnrichments._
-
 import java.util.Collections
 import java.util.concurrent.CompletableFuture
 
+import ch.epfl.scala.bsp4j.DebugSessionAddress
 import javax.annotation.Nullable
 import org.eclipse.lsp4j.jsonrpc.services.{JsonNotification, JsonRequest}
 import org.eclipse.lsp4j.services.LanguageClient
@@ -12,6 +12,9 @@ import org.eclipse.lsp4j.{ExecuteCommandParams, MessageParams, MessageType}
 import scala.meta.internal.tvp._
 
 trait MetalsLanguageClient extends LanguageClient with TreeViewClient {
+
+  @JsonNotification("buildTarget/debuggeeAttachable")
+  def debuggeeAttachable(params: DebugSessionAddress): Unit
 
   /**
    * Display message in the editor "status bar", which should be displayed somewhere alongside the buffer.

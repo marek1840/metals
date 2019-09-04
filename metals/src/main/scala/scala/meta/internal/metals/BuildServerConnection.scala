@@ -16,10 +16,15 @@ import ch.epfl.scala.bsp4j.{
   DebugSessionParams,
   InitializeBuildParams,
   InitializeBuildResult,
+  RunParams,
+  RunResult,
+  ScalaMainClass,
   ScalaMainClassesParams,
   ScalaMainClassesResult,
   ScalaTestClassesParams,
-  ScalaTestClassesResult
+  ScalaTestClassesResult,
+  TestParams,
+  TestResult
 }
 import org.eclipse.lsp4j.jsonrpc.Launcher
 
@@ -89,6 +94,14 @@ case class BuildServerConnection(
       params: ScalaTestClassesParams
   ): CompletableFuture[ScalaTestClassesResult] = {
     register(server.buildTargetScalaTestClasses(params))
+  }
+
+  def run(params: RunParams): CompletableFuture[RunResult] = {
+    register(server.buildTargetRun(params))
+  }
+
+  def test(params: TestParams): CompletableFuture[TestResult] = {
+    register(server.buildTargetTest(params))
   }
 
   def startDebugSession(params: DebugSessionParams): CompletableFuture[URI] = {

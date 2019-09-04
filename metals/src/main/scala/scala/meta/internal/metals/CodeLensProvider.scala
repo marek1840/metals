@@ -1,18 +1,19 @@
 package scala.meta.internal.metals
 
-import java.util
-import java.util.Collections
 import java.util.Collections._
 
-import ch.epfl.scala.bsp4j.ScalaMainClass
+import ch.epfl.scala.bsp4j.{
+  BuildTargetIdentifier,
+  ScalaMainClass,
+  ScalaTestClassesItem,
+  ScalaTestParams
+}
 import ch.epfl.scala.{bsp4j => b}
-import org.eclipse.lsp4j.CodeLens
 import org.eclipse.{lsp4j => l}
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.meta.internal.metals.CodeLensProvider._
 import scala.meta.internal.metals.ClientCommands.StartDebugSession
+import scala.meta.internal.metals.CodeLensProvider._
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.mtags.Semanticdbs
 import scala.meta.io.AbsolutePath
@@ -75,7 +76,7 @@ final class CodeLensProvider(
   }
 }
 
-object CodeLensProvider {
+object CodeLensProvider extends JsonParser {
   sealed trait CommandFactory[A] {
     protected def names: List[String]
     protected def dataKind: String
@@ -84,29 +85,44 @@ object CodeLensProvider {
         target: b.BuildTargetIdentifier,
         data: A
     ): List[l.Command] = {
-      val args = new b.DebugSessionParams(
-        singletonList(target),
-        new b.LaunchParameters(dataKind, wrap(data))
-      )
+      val arg = argument(target, data)
 
       names.map { name =>
-        new l.Command(name, StartDebugSession.id, singletonList(args))
+        new l.Command(name, StartDebugSession.id, singletonList(arg))
       }
     }
 
-    protected def wrap(data: A): Any = data
+    protected def argument(
+        target: b.BuildTargetIdentifier,
+        data: A
+    ): DebugSessionParameters
   }
 
   final object MainClassLensFactory extends CommandFactory[ScalaMainClass] {
     val names: List[String] = List("run")
     val dataKind: String = b.LaunchParametersDataKind.SCALA_MAIN_CLASS
+
+    override protected def argument(
+        target: b.BuildTargetIdentifier,
+        data: b.ScalaMainClass
+    ): DebugSessionParameters = {
+      DebugSessionParameters(singletonList(target), dataKind, data.toJson)
+    }
   }
 
   final object TestSuitesLensFactory extends CommandFactory[String] {
     val names: List[String] = List("test")
     val dataKind: String = b.LaunchParametersDataKind.SCALA_TEST_SUITES
 
-    override protected def wrap(value: String): Any =
-      Collections.singletonList(value)
+    override protected def argument(
+        target: b.BuildTargetIdentifier,
+        data: String
+    ): DebugSessionParameters = {
+      val testParams = new b.ScalaTestParams(
+        singletonList(new b.ScalaTestClassesItem(target, singletonList(data)))
+      )
+
+      DebugSessionParameters(singletonList(target), dataKind, testParams.toJson)
+    }
   }
 }

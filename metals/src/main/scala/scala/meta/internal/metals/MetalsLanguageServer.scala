@@ -4,6 +4,7 @@ import java.net.{ServerSocket, URI, URLClassLoader}
 import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.file._
 import java.util
+import java.util.UUID
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import java.util.concurrent.{
   CompletableFuture,
@@ -39,7 +40,7 @@ import scala.meta.parsers.ParseException
 import scala.meta.pc.CancelToken
 import scala.meta.tokenizers.TokenizeException
 import scala.util.control.NonFatal
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 class MetalsLanguageServer(
     ec: ExecutionContextExecutorService,
@@ -54,7 +55,8 @@ class MetalsLanguageServer(
     sh: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(),
     newBloopClassloader: () => URLClassLoader = () =>
       Embedded.newBloopClassloader()
-) extends Cancelable {
+) extends Cancelable
+    with JsonParser {
   ThreadPools.discardRejectedRunnables("MetalsLanguageServer.sh", sh)
   ThreadPools.discardRejectedRunnables("MetalsLanguageServer.ec", ec)
   private val cancelables = new MutableCancelable()
@@ -106,6 +108,7 @@ class MetalsLanguageServer(
   private val languageClient =
     new DelegatingLanguageClient(NoopLanguageClient, config)
   private val buildTargetClasses = new BuildTargetClasses(() => buildServer)
+  private val debugAdapters = register(new DebugAdapters())
   var userConfig = UserConfiguration()
   val buildTargets: BuildTargets = new BuildTargets()
   val compilations: Compilations = new Compilations(
@@ -237,6 +240,7 @@ class MetalsLanguageServer(
       diagnostics,
       buildTargets,
       buildTargetClasses,
+      debugAdapters,
       config,
       statusBar,
       time,
@@ -1099,41 +1103,25 @@ class MetalsLanguageServer(
           )
         }.asJavaObject
       case ServerCommands.OpenDebugSession() =>
-        val uri =
-          DebugAdapterProxy.parseParameters(params.getArguments.asScala) match {
-            case Failure(exception) =>
-              Future.failed(exception)
-            case Success(parameters) =>
-              val proxyServer = new ServerSocket(0)
-              val proxyURI = {
-                val host = InetAddresses.toUriString(proxyServer.getInetAddress)
-                val port = proxyServer.getLocalPort
-                URI.create(s"tcp://$host:$port")
-              }
+        val parsedParameters = params.getArguments.asScala match {
+          case Seq(head) => head.as[DebugSessionParameters]
+          case _ =>
+            Failure(new IllegalArgumentException("Expecting a single argument"))
+        }
 
-              def debugSession(): Future[URI] = {
-                buildServer match {
-                  case None =>
-                    Future.failed(new IllegalStateException("No build server"))
-                  case Some(connection) =>
-                    connection.startDebugSession(parameters).asScala
-                }
-              }
+        parsedParameters match {
+          case Failure(exception) =>
+            Future.failed(exception).asJavaObject
 
-              DebugAdapterProxy
-                .create(proxyServer, () => debugSession())
-                .map(cancelables.add)
-                .map(_ => proxyURI)
-                .onTimeout(5, TimeUnit.SECONDS)(
-                  // TODO is it even necessary?
-                  languageClient.showMessage(
-                    MessageType.Error,
-                    "Could not open a debug session"
-                  )
-                )
-          }
+          case Success(parameters) =>
+            val uri = for {
+              connection <- Try(buildServer.get)
+              debuggeeFactory <- Debuggee.factory(connection, parameters)
+              uri <- debugAdapters.startAdapter(debuggeeFactory)
+            } yield uri
 
-        uri.asJavaObject
+            Future.fromTry(uri).asJavaObject
+        }
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject

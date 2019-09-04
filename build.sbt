@@ -141,8 +141,8 @@ lazy val V = new {
   val scala213 = "2.13.0"
   val scalameta = "4.2.2"
   val semanticdb = scalameta
-  val bsp = "2.0.0-M4+1-4ddca89a"
-  val bloop = "1.3.2+188-e7771c60+20190902-0941"
+  val bsp = "2.0.0-M4+5-80be6bfb+20190904-0845"
+  val bloop = "1.3.2+132-cd017705+20190904-0848"
   val sbtBloop = bloop
   val gradleBloop = bloop
   val scalafmt = "2.0.1"
@@ -154,6 +154,8 @@ lazy val V = new {
   def guava = "com.google.guava" % "guava" % "28.0-jre"
   def lsp4j = "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.0"
   def dap4j = "org.eclipse.lsp4j" % "org.eclipse.lsp4j.debug" % "0.8.0"
+  def javaDebug =
+    "com.microsoft.java" % "com.microsoft.java.debug.core" % "0.21.0"
 }
 
 skip.in(publish) := true
@@ -241,7 +243,7 @@ lazy val metals = project
       V.lsp4j,
       // for DAP
       V.dap4j,
-      "org.eclipse.lsp4j" % "org.eclipse.lsp4j.debug" % "0.7.2",
+      V.javaDebug,
       // for producing SemanticDB from Java source files
       "com.thoughtworks.qdox" % "qdox" % "2.0-M9",
       // for finding paths of global log/cache directories

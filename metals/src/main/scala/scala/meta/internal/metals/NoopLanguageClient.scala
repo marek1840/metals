@@ -1,11 +1,14 @@
 package scala.meta.internal.metals
 
 import java.util.concurrent.CompletableFuture
+
+import ch.epfl.scala.bsp4j.DebugSessionAddress
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.eclipse.lsp4j.MessageActionItem
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.ShowMessageRequestParams
+
 import scala.meta.internal.tvp._
 
 /**
@@ -42,6 +45,8 @@ abstract class NoopLanguageClient extends MetalsLanguageClient {
   // override def metalsTreeViewNodeReveal(
   //     params: TreeViewNodeRevealResult
   // ): Unit = ()
+
+  override def debuggeeAttachable(params: DebugSessionAddress): Unit = ()
 }
 
 object NoopLanguageClient extends NoopLanguageClient
