@@ -1116,7 +1116,7 @@ class MetalsLanguageServer(
           case Success(parameters) =>
             val uri = for {
               connection <- Try(buildServer.get)
-              debuggeeFactory <- Debuggee.factory(connection, parameters)
+              debuggeeFactory <- Debuggee.factory(parameters)(connection)
               uri <- debugAdapters.startAdapter(debuggeeFactory)
             } yield uri
 

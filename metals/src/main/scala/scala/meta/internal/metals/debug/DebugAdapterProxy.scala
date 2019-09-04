@@ -7,7 +7,12 @@ import java.util.concurrent.{CompletableFuture, TimeUnit}
 import com.google.gson.{Gson, JsonObject}
 import org.eclipse.lsp4j.debug._
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future, Promise}
+import scala.concurrent.{
+  ExecutionContext,
+  ExecutionContextExecutorService,
+  Future,
+  Promise
+}
 import scala.meta.internal.metals.Cancelable
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.util.{Failure, Try}
