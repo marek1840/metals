@@ -1,37 +1,35 @@
 package scala.meta.internal.metals
 
+import java.net.{Socket, URI}
+import java.nio.charset.StandardCharsets
+import java.nio.file._
+import java.util
+import java.util.concurrent.{
+  CancellationException,
+  CompletableFuture,
+  CompletionStage
+}
+
 import ch.epfl.scala.{bsp4j => b}
 import io.undertow.server.HttpServerExchange
-import java.net.URI
-import java.nio.charset.StandardCharsets
-import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
-import java.nio.file.StandardCopyOption
-import java.util
-import java.util.concurrent.CancellationException
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionStage
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.{lsp4j => l}
-import scala.collection.convert.DecorateAsJava
-import scala.collection.convert.DecorateAsScala
+
+import scala.collection.convert.{DecorateAsJava, DecorateAsScala}
 import scala.compat.java8.FutureConverters
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.concurrent.Promise
+import scala.concurrent._
+import scala.concurrent.duration.{FiniteDuration, TimeUnit}
 import scala.meta.Tree
 import scala.meta.inputs.Input
 import scala.meta.internal.io.FileIO
 import scala.meta.internal.mtags.MtagsEnrichments
-import scala.meta.internal.semanticdb.Scala.Descriptor
-import scala.meta.internal.semanticdb.Scala.Symbols
+import scala.meta.internal.semanticdb.Scala.{Descriptor, Symbols}
 import scala.meta.internal.trees.Origin
 import scala.meta.internal.{semanticdb => s}
 import scala.meta.io.AbsolutePath
 import scala.meta.tokens.Token
-import scala.util.Properties
+import scala.util.control.NonFatal
+import scala.util.{Failure, Properties, Success, Try}
 import scala.{meta => m}
 
 /**
@@ -127,7 +125,8 @@ object MetalsEnrichments
       future.asJava.asInstanceOf[CompletableFuture[Object]]
     def asJavaUnit(implicit ec: ExecutionContext): CompletableFuture[Unit] =
       future.ignoreValue.asJava
-
+    def voided(implicit ec: ExecutionContext): CompletableFuture[Void] =
+      future.flatMap(_ => Future(null: Void)).asJava
     def ignoreValue(implicit ec: ExecutionContext): Future[Unit] =
       future.map(_ => ())
     def logErrorAndContinue(
@@ -145,6 +144,23 @@ object MetalsEnrichments
         case e =>
           scribe.error(s"Unexpected error while $doingWhat", e)
           throw e
+      }
+    }
+
+    def withTimeout(length: Int, unit: TimeUnit)(
+        implicit ec: ExecutionContext
+    ): Future[A] = {
+      Future(Await.result(future, FiniteDuration(length, unit)))
+    }
+
+    def onTimeout(length: Int, unit: TimeUnit)(
+        action: => Unit
+    )(implicit ec: ExecutionContext): Future[A] = {
+      // schedule action to execute on timeout
+      future.withTimeout(length, unit).recoverWith {
+        case e: TimeoutException =>
+          action
+          Future.failed(e)
       }
     }
   }
@@ -502,5 +518,4 @@ object MetalsEnrichments
     def findFirstTrailing(predicate: Token => Boolean): Option[Token] =
       trailingTokens.find(predicate)
   }
-
 }

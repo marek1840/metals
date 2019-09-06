@@ -1,5 +1,7 @@
 package scala.meta.internal.metals
 
+import ch.epfl.scala.{bsp4j => b}
+
 /**
  * Optional commands that metals expects the client to implement.
  */
@@ -51,15 +53,34 @@ object ClientCommands {
        |""".stripMargin
   )
 
-  val RunMain = Command(
-    "metals-main-run",
+  val StartDebugSession = Command(
+    "metals-debug-session-start",
     "run",
-    "Runs main method",
-    """|Array of strings of length 2 where
-       |- first array element is a build target identifier URI
-       |- second array element is the name of the class containing the main method 
-       |Example: `["mybuild://workspace/foo/?id=foo", "com.app.Main"]`
+    s"""|Starts a debug session. The address of a new Debug Adapter can be obtained 
+        | by using the ${ServerCommands.OpenDebugSession.id} metals server command
+        | with the same arguments as provided to this command.
+    """.stripMargin,
+    s"""|DebugSessionParameters object. It should be forwarded
+        |to the ${ServerCommands.OpenDebugSession.id} command as is.
+        |
+        |Example:
+        |```json
+        |{
+        |  "targets": ["mybuild://workspace/foo/?id=foo"],
+        |   dataKind: "${b.RunParamsDataKind.SCALA_MAIN_CLASS}",
+        |   data: {
+        |      className: "com.foo.App"
+        |   }
+        |}```
     """.stripMargin
+  )
+
+  val RefreshModel = Command(
+    "metals-model-refresh",
+    "Refresh model",
+    "Notifies the client that the model has been updated " +
+      "and it should be refreshed " +
+      "(e.g. by resending code lens request)"
   )
 
   val GotoLocation = Command(
@@ -67,7 +88,7 @@ object ClientCommands {
     "Goto location",
     "Move the cursor focus to the provided location",
     """|A LSP `Location` object with `uri` and `range` fields.
-       |Example: 
+       |Example:
        |```json
        |{
        |  "uri": "file://path/to/Definition.scala",
@@ -86,6 +107,7 @@ object ClientCommands {
     ToggleLogs,
     FocusDiagnostics,
     GotoLocation,
-    EchoCommand
+    EchoCommand,
+    RefreshModel
   )
 }

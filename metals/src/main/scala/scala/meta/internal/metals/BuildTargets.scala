@@ -1,25 +1,21 @@
 package scala.meta.internal.metals
 
-import java.util
-import java.{util => ju}
 import java.lang.{Iterable => JIterable}
-import ch.epfl.scala.bsp4j.BuildTarget
-import ch.epfl.scala.bsp4j.BuildTargetIdentifier
-import ch.epfl.scala.bsp4j.ScalacOptionsItem
-import ch.epfl.scala.bsp4j.ScalacOptionsResult
-import ch.epfl.scala.bsp4j.WorkspaceBuildTargetsResult
+import java.net.URLClassLoader
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.{util => ju}
+
+import ch.epfl.scala.bsp4j._
+
 import scala.annotation.tailrec
 import scala.collection.concurrent.TrieMap
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-import scala.meta.internal.metals.MetalsEnrichments._
-import scala.meta.io.AbsolutePath
-import scala.meta.internal.mtags.Symbol
-import scala.util.Try
-import scala.meta.internal.mtags.Mtags
 import scala.meta.internal.io.PathIO
-import java.net.URLClassLoader
+import scala.meta.internal.metals.MetalsEnrichments._
+import scala.meta.internal.mtags.{Mtags, Symbol}
+import scala.meta.io.AbsolutePath
+import scala.util.Try
 import scala.util.control.NonFatal
 
 /**
@@ -40,7 +36,7 @@ final class BuildTargets() {
   private val inverseDependencies =
     TrieMap.empty[BuildTargetIdentifier, ListBuffer[BuildTargetIdentifier]]
   private val buildTargetSources =
-    TrieMap.empty[BuildTargetIdentifier, util.Set[AbsolutePath]]
+    TrieMap.empty[BuildTargetIdentifier, ju.Set[AbsolutePath]]
   private val inverseDependencySources =
     TrieMap.empty[AbsolutePath, BuildTargetIdentifier]
 
@@ -57,6 +53,7 @@ final class BuildTargets() {
     buildTargetSources.clear()
     inverseDependencySources.clear()
   }
+
   def sourceItems: Iterable[AbsolutePath] =
     sourceItemsToBuildTarget.keys
   def sourceItemsToBuildTargets
@@ -201,13 +198,13 @@ final class BuildTargets() {
    * By default, we rely on carefully recording what build target produced what
    * files in the `.metals/readonly/` directory. This approach has the problem
    * that navigation failed to work in `readonly/` sources if
-
+   *
    * - a new metals feature forgot to record the build target
    * - a user removes `.metals/metals.h2.db`
-
+   *
    * When encountering an unknown `readonly/` file we do the following steps to
    * infer what build target it belongs to:
-
+   *
    * - extract toplevel symbol definitions from the source code.
    * - find a jar file from any classfile that defines one of the toplevel
    *   symbols.

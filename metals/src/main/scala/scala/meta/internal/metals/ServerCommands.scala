@@ -1,6 +1,7 @@
 package scala.meta.internal.metals
 
 import scala.util.matching.Regex
+import ch.epfl.scala.{bsp4j => b}
 
 /**
  * LSP commands supported by the Metals language server.
@@ -85,6 +86,23 @@ object ServerCommands {
        |""".stripMargin
   )
 
+  val OpenDebugSession = Command(
+    "debug-session-open",
+    "Open debug session",
+    "Requests a debug session from BSP Server",
+    s"""|DebugSessionParameters object
+        |Example:
+        |```json
+        |{
+        |  "targets": ["mybuild://workspace/foo/?id=foo"],
+        |   dataKind: "${b.RunParamsDataKind.SCALA_MAIN_CLASS}",
+        |   data: {
+        |      className: "com.foo.App"
+        |   }
+        |}```
+    """.stripMargin
+  )
+
   val PresentationCompilerRestart = Command(
     "presentation-compiler-restart",
     "Restart presentation compiler",
@@ -166,7 +184,7 @@ object ServerCommands {
     RunDoctor,
     CascadeCompile,
     CancelCompile,
-    BspSwitch
+    BspSwitch,
+    OpenDebugSession
   )
-
 }

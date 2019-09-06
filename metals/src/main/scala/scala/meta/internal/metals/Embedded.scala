@@ -164,6 +164,7 @@ object Embedded {
   def newBloopClassloader(
       bloopVersion: String = BuildInfo.bloopVersion
   ): URLClassLoader = {
+    scribe.debug(s"Bloop version: $bloopVersion")
     val settings = downloadSettings(
       new Dependency(
         "ch.epfl.scala",

@@ -1,6 +1,7 @@
 package tests
 import java.nio.file.Files
-import java.util.concurrent.Executors
+import java.util.concurrent.{ExecutorService, Executors}
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
@@ -30,7 +31,7 @@ abstract class BaseSlowSuite(suiteName: String) extends BaseSuite {
   def time: Time = Time.system
   implicit val ex: ExecutionContextExecutorService =
     ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
-  private val sh = Executors.newSingleThreadScheduledExecutor()
+  val sh = Executors.newSingleThreadScheduledExecutor()
   def bspGlobalDirectories: List[AbsolutePath] = Nil
   var server: TestingServer = _
   var client: TestingClient = _

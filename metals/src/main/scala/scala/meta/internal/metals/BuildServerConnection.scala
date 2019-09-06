@@ -7,14 +7,24 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
-import ch.epfl.scala.bsp4j.BuildClientCapabilities
-import ch.epfl.scala.bsp4j.CompileParams
-import ch.epfl.scala.bsp4j.CompileResult
-import ch.epfl.scala.bsp4j.InitializeBuildParams
-import ch.epfl.scala.bsp4j.InitializeBuildResult
-import ch.epfl.scala.bsp4j.ScalaMainClassesParams
-import ch.epfl.scala.bsp4j.ScalaMainClassesResult
+
+import ch.epfl.scala.bsp4j.{
+  BuildClientCapabilities,
+  CompileParams,
+  CompileResult,
+  InitializeBuildParams,
+  InitializeBuildResult,
+  RunParams,
+  RunResult,
+  ScalaMainClassesParams,
+  ScalaMainClassesResult,
+  ScalaTestClassesParams,
+  ScalaTestClassesResult,
+  TestParams,
+  TestResult
+}
 import org.eclipse.lsp4j.jsonrpc.Launcher
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutorService
 import scala.concurrent.Future
@@ -74,10 +84,21 @@ case class BuildServerConnection(
   def mainClasses(
       params: ScalaMainClassesParams
   ): CompletableFuture[ScalaMainClassesResult] = {
-    // TODO use server.buildTargetScalaMainClasses when bloop releases version supporting mainClasses
-    CompletableFuture.completedFuture(
-      new ScalaMainClassesResult(Collections.emptyList())
-    )
+    register(server.buildTargetScalaMainClasses(params))
+  }
+
+  def testSuites(
+      params: ScalaTestClassesParams
+  ): CompletableFuture[ScalaTestClassesResult] = {
+    register(server.buildTargetScalaTestClasses(params))
+  }
+
+  def run(params: RunParams): CompletableFuture[RunResult] = {
+    register(server.buildTargetRun(params))
+  }
+
+  def test(params: TestParams): CompletableFuture[TestResult] = {
+    register(server.buildTargetTest(params))
   }
 
   private val cancelled = new AtomicBoolean(false)

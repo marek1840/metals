@@ -1,6 +1,5 @@
 package scala.meta.internal.metals
 
-import ch.epfl.scala.bsp4j.BuildServer
-import ch.epfl.scala.bsp4j.ScalaBuildServer
+import ch.epfl.scala.{bsp4j => b}
 
-trait MetalsBuildServer extends BuildServer with ScalaBuildServer
+trait MetalsBuildServer extends b.BuildServer with b.ScalaBuildServer

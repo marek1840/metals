@@ -1,21 +1,21 @@
 package scala.meta.internal.metals
 
-import ch.epfl.scala.bsp4j.BuildTargetIdentifier
-import ch.epfl.scala.bsp4j.CompileReport
-import ch.epfl.scala.bsp4j.TaskDataKind
-import ch.epfl.scala.bsp4j.TaskFinishParams
-import ch.epfl.scala.bsp4j.TaskProgressParams
-import ch.epfl.scala.bsp4j.TaskStartParams
+import java.net.URI
+import java.util.{Collections, UUID}
+import java.util.concurrent.ConcurrentHashMap
+
+import ch.epfl.scala.bsp4j._
 import ch.epfl.scala.{bsp4j => b}
 import com.google.gson.JsonObject
-import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import org.eclipse.{lsp4j => l}
+
 import scala.collection.concurrent.TrieMap
-import scala.concurrent.Promise
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.tvp._
+import scala.util.Try
+import scala.util.control.NonFatal
 
 /**
  * A build client that forwards notifications from the build server to the language client.
@@ -24,12 +24,16 @@ final class ForwardingMetalsBuildClient(
     languageClient: MetalsLanguageClient,
     diagnostics: Diagnostics,
     buildTargets: BuildTargets,
+    buildTargetClasses: BuildTargetClasses,
+    debugAdapters: DebugAdapters,
     config: MetalsServerConfig,
     statusBar: StatusBar,
     time: Time,
     didCompile: CompileReport => Unit,
-    treeViewProvider: () => TreeViewProvider
-) extends MetalsBuildClient
+    treeViewProvider: () => TreeViewProvider,
+    isCurrentlyOpened: b.BuildTargetIdentifier => Boolean
+)(implicit ec: ExecutionContext)
+    extends MetalsBuildClient
     with Cancelable {
 
   private case class Compilation(
@@ -62,17 +66,20 @@ final class ForwardingMetalsBuildClient(
   def onBuildShowMessage(params: l.MessageParams): Unit =
     languageClient.showMessage(params)
 
-  def onBuildLogMessage(params: l.MessageParams): Unit =
+  def onBuildLogMessage(params: b.LogMessageParams): Unit = {
+    debugAdapters.forwardOutput(params.getOriginId, params)
+
     params.getType match {
-      case l.MessageType.Error =>
+      case b.MessageType.ERROR =>
         scribe.error(params.getMessage)
-      case l.MessageType.Warning =>
+      case b.MessageType.WARNING =>
         scribe.warn(params.getMessage)
-      case l.MessageType.Info =>
+      case b.MessageType.INFORMATION =>
         scribe.info(params.getMessage)
-      case l.MessageType.Log =>
+      case b.MessageType.LOG =>
         scribe.info(params.getMessage)
     }
+  }
 
   def onBuildPublishDiagnostics(params: b.PublishDiagnosticsParams): Unit = {
     diagnostics.onBuildPublishDiagnostics(params)
@@ -84,6 +91,18 @@ final class ForwardingMetalsBuildClient(
 
   def onBuildTargetCompileReport(params: b.CompileReport): Unit = {}
 
+  @JsonNotification("buildTarget/debuggeeListening")
+  def debuggeeListening(address: DebuggeeAddress): Unit = {
+    try {
+      val uri = URI.create(address.getUri)
+      debugAdapters.bind(address.getOriginId, uri)
+    } catch {
+      case NonFatal(e) =>
+        val msg = s"Could not bind debuggee address due to: ${e.getMessage}"
+        scribe.error(msg)
+    }
+  }
+
   @JsonNotification("build/taskStart")
   def buildTaskStart(params: TaskStartParams): Unit = {
     params.getDataKind match {
@@ -93,18 +112,19 @@ final class ForwardingMetalsBuildClient(
         }
         for {
           task <- params.asCompileTask
-          info <- buildTargets.info(task.getTarget)
+          target = task.getTarget
+          info <- buildTargets.info(target)
         } {
-          diagnostics.onStartCompileBuildTarget(task.getTarget)
+          diagnostics.onStartCompileBuildTarget(target)
           // cancel ongoing compilation for the current target, if any.
-          compilations.remove(task.getTarget).foreach(_.promise.cancel())
+          compilations.remove(target).foreach(_.promise.cancel())
 
           val name = info.getDisplayName
           val promise = Promise[CompileReport]()
           val isNoOp = params.getMessage.startsWith("Start no-op compilation")
           val compilation = Compilation(new Timer(time), promise, isNoOp)
-
           compilations(task.getTarget) = compilation
+
           statusBar.trackFuture(
             s"Compiling $name",
             promise.future,
@@ -139,6 +159,11 @@ final class ForwardingMetalsBuildClient(
             scribe.info(s"time: compiled $name in ${compilation.timer}")
           }
           if (isSuccess) {
+            buildTargetClasses
+              .rebuildIndex(target)
+              .filter(_ => isCurrentlyOpened(target))
+              .foreach(_ => languageClient.refreshModel())
+
             if (hasReportedError.contains(target)) {
               // Only report success compilation if it fixes a previous compile error.
               statusBar.addMessage(message)

@@ -19,7 +19,7 @@ trait MetalsBuildClient {
   ): Unit
 
   @JsonNotification("build/logMessage")
-  def onBuildLogMessage(params: l.MessageParams): Unit
+  def onBuildLogMessage(params: b.LogMessageParams): Unit
 
   @JsonNotification("build/publishDiagnostics")
   def onBuildPublishDiagnostics(params: b.PublishDiagnosticsParams): Unit
