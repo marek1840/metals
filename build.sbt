@@ -153,6 +153,8 @@ lazy val V = new {
   def deprecatedScalaVersions = Seq("2.12.7", scala211)
   def guava = "com.google.guava" % "guava" % "28.0-jre"
   def lsp4j = "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.0"
+  def dap4j =
+    "org.eclipse.lsp4j" % "org.eclipse.lsp4j.debug" % "0.8.0"
 }
 
 skip.in(publish) := true
@@ -399,7 +401,8 @@ lazy val unit = project
       "io.get-coursier" %% "coursier-cache" % coursier.util.Properties.version,
       "org.scalameta" %% "testkit" % V.scalameta,
       "ch.epfl.scala" %% "bloop-config" % V.bloop,
-      "com.lihaoyi" %% "utest" % "0.6.0"
+      "com.lihaoyi" %% "utest" % "0.6.0",
+      V.dap4j
     ),
     buildInfoPackage := "tests",
     resourceGenerators.in(Compile) += InputProperties.resourceGenerator(input),
