@@ -47,6 +47,7 @@ import scala.meta.pc.CancelToken
 import scala.meta.tokenizers.TokenizeException
 import scala.util.control.NonFatal
 import scala.util.Success
+import scala.util.Try
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonObject
 
@@ -113,6 +114,7 @@ class MetalsLanguageServer(
   private val messages = new Messages(config.icons)
   private val languageClient =
     new DelegatingLanguageClient(NoopLanguageClient, config)
+  private val debugAdapters = register(new DebugAdapters())
   var userConfig = UserConfiguration()
   val buildTargets: BuildTargets = new BuildTargets()
   val compilations: Compilations = new Compilations(
@@ -243,6 +245,7 @@ class MetalsLanguageServer(
       diagnostics,
       buildTargets,
       buildTargetClasses,
+      debugAdapters,
       config,
       statusBar,
       time,
@@ -1028,7 +1031,11 @@ class MetalsLanguageServer(
   }
 
   @JsonRequest("workspace/executeCommand")
-  def executeCommand(params: ExecuteCommandParams): CompletableFuture[Object] =
+  def executeCommand(
+      params: ExecuteCommandParams
+  ): CompletableFuture[Object] = {
+    import JsonParser._
+
     params.getCommand match {
       case ServerCommands.ScanWorkspaceSources() =>
         Future {
@@ -1099,10 +1106,30 @@ class MetalsLanguageServer(
             )
           )
         }.asJavaObject
+      case ServerCommands.StartDebugAdapter() =>
+        params.getArguments.asScala match {
+          case Seq(head) =>
+            val uri = for {
+              parameters <- head.as[DebugSessionParameters]
+              connection <- Try(buildServer.get)
+              debuggeeFactory <- Debuggee.factory(parameters)(connection)
+              uri <- debugAdapters.startAdapter(debuggeeFactory)
+            } yield uri
+
+            Future.fromTry(uri).asJavaObject
+
+          case _ =>
+            val error = new IllegalArgumentException(
+              "Expecting a single argument"
+            )
+            Future.failed(error).asJavaObject
+        }
+
       case cmd =>
         scribe.error(s"Unknown command '$cmd'")
         Future.successful(()).asJavaObject
     }
+  }
 
   @JsonRequest("metals/treeViewChildren")
   def treeViewChildren(

@@ -141,8 +141,8 @@ lazy val V = new {
   val scala213 = "2.13.0"
   val scalameta = "4.2.2"
   val semanticdb = scalameta
-  val bsp = "2.0.0-M4+11-aea9deab"
-  val bloop = "1.3.2+139-b48b1ea6+20190906-1401"
+  val bsp = "2.0.0-M4+8-357fd54f"
+  val bloop = "1.3.2+138-8e7adfd8+20190910-0940"
   val sbtBloop = bloop
   val gradleBloop = bloop
   val scalafmt = "2.0.1"
@@ -239,6 +239,8 @@ lazy val metals = project
       "ch.epfl.scala" % "bsp4j" % V.bsp,
       // for LSP
       V.lsp4j,
+      // for DAP
+      "com.microsoft.java" % "com.microsoft.java.debug.core" % "0.21.0",
       // for producing SemanticDB from Java source files
       "com.thoughtworks.qdox" % "qdox" % "2.0-M9",
       // for finding paths of global log/cache directories

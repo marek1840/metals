@@ -1,5 +1,6 @@
 package scala.meta.internal.metals
 
+import java.net.URI
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
@@ -13,6 +14,7 @@ import scala.collection.concurrent.TrieMap
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.tvp._
+import scala.util.control.NonFatal
 
 /**
  * A build client that forwards notifications from the build server to the language client.
@@ -22,6 +24,7 @@ final class ForwardingMetalsBuildClient(
     diagnostics: Diagnostics,
     buildTargets: BuildTargets,
     buildTargetClasses: BuildTargetClasses,
+    debugAdapters: DebugAdapters,
     config: MetalsServerConfig,
     statusBar: StatusBar,
     time: Time,
@@ -62,17 +65,20 @@ final class ForwardingMetalsBuildClient(
   def onBuildShowMessage(params: l.MessageParams): Unit =
     languageClient.showMessage(params)
 
-  def onBuildLogMessage(params: l.MessageParams): Unit =
+  def onBuildLogMessage(params: b.LogMessageParams): Unit = {
+    debugAdapters.forwardOutput(params.getOriginId, params)
+
     params.getType match {
-      case l.MessageType.Error =>
+      case b.MessageType.ERROR =>
         scribe.error(params.getMessage)
-      case l.MessageType.Warning =>
+      case b.MessageType.WARNING =>
         scribe.warn(params.getMessage)
-      case l.MessageType.Info =>
+      case b.MessageType.INFORMATION =>
         scribe.info(params.getMessage)
-      case l.MessageType.Log =>
+      case b.MessageType.LOG =>
         scribe.info(params.getMessage)
     }
+  }
 
   def onBuildPublishDiagnostics(params: b.PublishDiagnosticsParams): Unit = {
     diagnostics.onBuildPublishDiagnostics(params)
@@ -83,6 +89,18 @@ final class ForwardingMetalsBuildClient(
   }
 
   def onBuildTargetCompileReport(params: b.CompileReport): Unit = {}
+
+  @JsonNotification("buildTarget/debuggeeListening")
+  def debuggeeListening(address: DebuggeeAddress): Unit = {
+    try {
+      val uri = URI.create(address.getUri)
+      debugAdapters.bind(address.getOriginId, uri)
+    } catch {
+      case NonFatal(e) =>
+        val msg = s"Could not bind debuggee address due to: ${e.getMessage}"
+        scribe.error(msg)
+    }
+  }
 
   @JsonNotification("build/taskStart")
   def buildTaskStart(params: TaskStartParams): Unit = {

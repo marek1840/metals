@@ -15,18 +15,17 @@ object DebugProtocolSuite extends BaseSlowSuite("debug-protocol") {
     for {
       _ <- server.initialize(
         s"""/metals.json
-           |{
-           |  "a": {}
-           |}
+           |{ "a": {} }
            |/$mainFile
            |package a
            |object Main {
            |  def main(args: Array[String]) = {
-           |    print("Foo")
+           |    println("Foo")
            |  }
            |}
            |""".stripMargin
       )
+      _ <- server.didSave(mainFile)(x => x)
       debugger <- server.startDebugging(
         "a",
         RunParamsDataKind.SCALA_MAIN_CLASS,
@@ -35,26 +34,28 @@ object DebugProtocolSuite extends BaseSlowSuite("debug-protocol") {
       _ <- debugger.initialize
       _ <- debugger.launch
       _ <- debugger.awaitCompletion
-    } yield assertNoDiff(debugger.output, "Foo")
+    } yield {
+      scribe.info(debugger.output)
+      assertNoDiff(debugger.output, "Foo\n")
+    }
   }
 
   testAsync("restart") {
     for {
       _ <- server.initialize(
         s"""/metals.json
-           |{
-           |  "a": {}
-           |}
+           |{ "a": {} }
            |/$mainFile
            |package a
            |object Main {
-           |  def main(args: Array[String]) = { 
+           |  def main(args: Array[String]) = {
            |    println("Foo")
            |    synchronized(wait())
            |  }
            |}
            |""".stripMargin
       )
+      _ <- server.didSave(mainFile)(x => x)
       debugger <- server.startDebugging(
         "a",
         RunParamsDataKind.SCALA_MAIN_CLASS,
@@ -63,10 +64,15 @@ object DebugProtocolSuite extends BaseSlowSuite("debug-protocol") {
       _ <- debugger.initialize
       _ <- debugger.launch
       _ <- debugger.awaitOutput("Foo\n").withTimeout(5, SECONDS)
+
+      _ <- server.didSave(mainFile)(_.replaceAll("Foo", "Bar"))
       _ <- debugger.restart
-      _ <- debugger.awaitOutput("Foo\nFoo").withTimeout(5, SECONDS)
+
+      _ <- debugger.initialize
+      _ <- debugger.launch
+      _ <- debugger.awaitOutput("Bar\n").withTimeout(5, SECONDS)
       _ <- debugger.disconnect
       _ <- debugger.awaitCompletion
-    } yield assertNoDiff(debugger.output, "Foo\nFoo\n")
+    } yield assertNoDiff(debugger.output, "Bar\n")
   }
 }

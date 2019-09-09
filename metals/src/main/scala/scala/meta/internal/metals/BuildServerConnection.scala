@@ -79,6 +79,14 @@ case class BuildServerConnection(
     register(server.buildTargetScalaTestClasses(params))
   }
 
+  def run(params: RunParams): CompletableFuture[RunResult] = {
+    register(server.buildTargetRun(params))
+  }
+
+  def test(params: TestParams): CompletableFuture[TestResult] = {
+    register(server.buildTargetTest(params))
+  }
+
   private val cancelled = new AtomicBoolean(false)
   override def cancel(): Unit = {
     if (cancelled.compareAndSet(false, true)) {

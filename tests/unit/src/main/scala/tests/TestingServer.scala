@@ -56,6 +56,7 @@ final class TestingServer(
     newBloopClassloader: () => URLClassLoader
 )(implicit ex: ExecutionContextExecutorService) {
   import JsonParser._
+
   val server = new MetalsLanguageServer(
     ex,
     buffers = buffers,

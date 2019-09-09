@@ -1,5 +1,5 @@
 package tests.debug
-import java.lang.Thread
+
 import java.net.{InetSocketAddress, Socket, URI}
 import java.util.Collections
 import java.util.concurrent.TimeUnit
@@ -17,13 +17,15 @@ import scala.concurrent.{
 }
 import scala.meta.internal.metals.MetalsEnrichments._
 
-final class TestDebugger(implicit ec: ExecutionContext)
-    extends IDebugProtocolClient
+final class TestDebugger(connect: IDebugProtocolClient => ServerConnection)(
+    implicit ec: ExecutionContext
+) extends IDebugProtocolClient
     with AutoCloseable {
-  protected var server: ServerConnection = _
+  protected var server: ServerConnection = connect(this)
 
-  private val terminationPromise = Promise[Unit]()
-  private val exitedPromise = Promise[Unit]()
+  private var initializedPromise = Promise[Unit]()
+  private var terminationPromise = Promise[Unit]()
+  private var exitedPromise = Promise[Unit]()
   private val outputs = mutable.Map.empty[String, StringBuilder]
   private val prefixes = mutable.Set.empty[Prefix]
 
@@ -36,15 +38,24 @@ final class TestDebugger(implicit ec: ExecutionContext)
   def launch: Future[Unit] = {
     for {
       _ <- server.launch(Collections.emptyMap()).asScala
+      _ <- initializedPromise.future
       _ <- server.configurationDone(new ConfigurationDoneArguments).asScala
     } yield ()
   }
 
   def restart: Future[Unit] = {
+    val args = new DisconnectArguments
+    args.setRestart(true)
     for {
-      _ <- server.restart(new RestartArguments).asScala
-      _ <- server.configurationDone(new ConfigurationDoneArguments).asScala
-    } yield ()
+      _ <- server.disconnect(args).asScala
+      _ <- server.listening.onTimeout(20, TimeUnit.SECONDS)(server.cancel())
+    } yield {
+      initializedPromise = Promise()
+      terminationPromise = Promise()
+      exitedPromise = Promise()
+      server = connect(this)
+      outputs.clear()
+    }
   }
 
   def disconnect: Future[Unit] = {
@@ -77,6 +88,10 @@ final class TestDebugger(implicit ec: ExecutionContext)
   }
 
   ////////////////////////////////////////////////////////
+  override def initialized(): Unit = {
+    initializedPromise.success(())
+  }
+
   override def terminated(args: TerminatedEventArguments): Unit = {
     terminationPromise.success(())
   }
@@ -115,15 +130,13 @@ object TestDebugger {
   def apply(
       uri: URI
   )(implicit ec: ExecutionContextExecutorService): TestDebugger = {
-    val socket = new Socket()
-    socket.connect(new InetSocketAddress(uri.getHost, uri.getPort), 2000)
+    def connect(client: IDebugProtocolClient) = {
+      val socket = new Socket()
+      socket.connect(new InetSocketAddress(uri.getHost, uri.getPort), 2000)
+      ServerConnection.open(socket, ClientProxy(client))
+    }
 
-    val debugger = new TestDebugger()
-
-    val connection = ServerConnection.open(socket, ClientProxy(debugger))
-    debugger.server = connection
-    debugger.server.listening.onComplete(_ => debugger.close())
-    Runtime.getRuntime.addShutdownHook(new Thread(() => debugger.close()))
+    val debugger = new TestDebugger(connect)
 
     debugger
   }

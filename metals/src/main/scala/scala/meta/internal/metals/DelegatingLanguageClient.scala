@@ -1,6 +1,8 @@
 package scala.meta.internal.metals
 
 import java.util.concurrent.CompletableFuture
+
+import ch.epfl.scala.bsp4j.DebuggeeAddress
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse
 import org.eclipse.lsp4j.ExecuteCommandParams
@@ -10,6 +12,7 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.RegistrationParams
 import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.UnregistrationParams
+
 import scala.meta.internal.tvp._
 
 class DelegatingLanguageClient(
@@ -91,4 +94,7 @@ class DelegatingLanguageClient(
     underlying.metalsTreeViewDidChange(params)
   }
 
+  override def debuggeeListening(params: DebuggeeAddress): Unit = {
+    underlying.debuggeeListening(params)
+  }
 }
