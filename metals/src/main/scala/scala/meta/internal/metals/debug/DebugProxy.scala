@@ -9,9 +9,12 @@ import scala.concurrent.Future
 import scala.meta.internal.metals.Cancelable
 import scala.meta.internal.metals.debug.DebugProtocol.OutputNotification
 import scala.meta.internal.metals.debug.DebugProtocol.RestartRequest
-import Proxy._
+import scala.meta.internal.metals.debug.DebugProxy._
 
-private[debug] final class Proxy(client: RemoteEndpoint, server: RemoteEndpoint)(
+private[debug] final class DebugProxy(
+    client: RemoteEndpoint,
+    server: RemoteEndpoint
+)(
     implicit ec: ExecutionContext
 ) {
   private val exitStatus = Promise[ExitStatus]()
@@ -55,11 +58,11 @@ private[debug] final class Proxy(client: RemoteEndpoint, server: RemoteEndpoint)
 
   def cancel(): Unit = {
     exitStatus.trySuccess(Terminated)
-    Cancelable.cancelAll(client, server)
+    Cancelable.cancelAll(List(client, server))
   }
 }
 
-private[debug] object Proxy {
+private[debug] object DebugProxy {
   import scala.meta.internal.metals.MetalsEnrichments._
 
   sealed trait ExitStatus
@@ -69,7 +72,7 @@ private[debug] object Proxy {
   def open(
       awaitClient: () => Future[Socket],
       connectToServer: () => Future[Socket]
-  )(implicit ec: ExecutionContext): Future[Proxy] = {
+  )(implicit ec: ExecutionContext): Future[DebugProxy] = {
     for {
       client <- awaitClient()
         .map(new RemoteEndpoint(_))
@@ -77,6 +80,6 @@ private[debug] object Proxy {
       server <- connectToServer()
         .map(new RemoteEndpoint(_))
         .withTimeout(10, TimeUnit.SECONDS)
-    } yield new Proxy(client, server)
+    } yield new DebugProxy(client, server)
   }
 }

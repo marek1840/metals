@@ -16,11 +16,13 @@ import scala.meta.internal.metals.Cancelable
 import scala.util.Failure
 import scala.util.Try
 
-final class DebugServer(val session: DebugSession, connect: () => Future[Proxy])(
-    implicit ec: ExecutionContext
-) extends Cancelable {
+final class DebugServer(
+    val session: DebugSession,
+    connect: () => Future[DebugProxy]
+)(implicit ec: ExecutionContext)
+    extends Cancelable {
   @volatile private var isCancelled = false
-  @volatile private var proxy: Proxy = _
+  @volatile private var proxy: DebugProxy = _
 
   lazy val listen: Future[Unit] = {
     def loop: Future[Unit] = {
@@ -30,8 +32,8 @@ final class DebugServer(val session: DebugSession, connect: () => Future[Proxy])
         if (isCancelled) Future(proxy.cancel())
         else {
           proxy.listen.flatMap {
-            case Proxy.Terminated => Future.unit
-            case Proxy.Restarted => loop
+            case DebugProxy.Terminated => Future.unit
+            case DebugProxy.Restarted => loop
           }
         }
       }
@@ -76,7 +78,7 @@ object DebugServer {
           }
       }
 
-      val proxyFactory = () => Proxy.open(awaitClient, connectToServer)
+      val proxyFactory = () => DebugProxy.open(awaitClient, connectToServer)
       val session = DebugSession(sessionName, uri.toString)
       val server = new DebugServer(session, proxyFactory)
       server.listen.andThen { case _ => proxyServer.close() }
