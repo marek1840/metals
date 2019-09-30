@@ -89,11 +89,8 @@ private[debug] final class RemoteServer(
   private def notify[A: ClassTag](msg: Notification, f: A => Unit): Unit = {
     msg.getParams match {
       case json: JsonElement =>
-        json.as[A] match {
-          case Success(value) =>
-            f(value)
-          case Failure(e) =>
-            scribe.error(s"Could not deserialize notification [msg]", e)
+        json.as[A].map(f).recover {
+          case e => scribe.error(s"Could not handle notification [msg]", e)
         }
       case _ =>
         scribe.error(s"Not a json: ${msg.getParams}")
