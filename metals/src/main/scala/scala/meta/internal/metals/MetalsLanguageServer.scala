@@ -43,7 +43,6 @@ import scala.meta.parsers.ParseException
 import scala.meta.pc.CancelToken
 import scala.meta.tokenizers.TokenizeException
 import scala.util.control.NonFatal
-import scala.util.Failure
 import scala.util.Success
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonObject
