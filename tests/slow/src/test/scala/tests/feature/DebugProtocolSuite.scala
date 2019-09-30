@@ -1,11 +1,11 @@
-package tests
+package tests.feature
+
 import java.util.Collections.emptyList
 import java.util.concurrent.TimeUnit.SECONDS
-
 import ch.epfl.scala.bsp4j.DebugSessionParamsDataKind
 import ch.epfl.scala.bsp4j.ScalaMainClass
-
 import scala.meta.internal.metals.MetalsEnrichments._
+import tests.BaseSlowSuite
 
 object DebugProtocolSuite extends BaseSlowSuite("debug-protocol") {
   testAsync("start") {
