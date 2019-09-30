@@ -80,10 +80,10 @@ private[debug] object DebugProxy {
       connectToServer: () => Future[Socket]
   )(implicit ec: ExecutionContext): Future[DebugProxy] = {
     for {
-      client <- awaitClient()
+      server <- connectToServer()
         .map(new RemoteEndpoint(_))
         .withTimeout(10, TimeUnit.SECONDS)
-      server <- connectToServer()
+      client <- awaitClient()
         .map(new RemoteEndpoint(_))
         .withTimeout(10, TimeUnit.SECONDS)
     } yield new DebugProxy(client, server)
