@@ -14,13 +14,13 @@ import scala.meta.internal.metals.debug.DebugProxy._
 private[debug] final class DebugProxy(
     client: RemoteEndpoint,
     server: RemoteEndpoint
-)(
-    implicit ec: ExecutionContext
-) {
+)(implicit ec: ExecutionContext) {
   private val exitStatus = Promise[ExitStatus]()
   @volatile private var outputTerminated = false
+  @volatile private var cancelled = false
 
   lazy val listen: Future[ExitStatus] = {
+    scribe.info("Starting debug proxy")
     listenToServer()
     listenToClient()
 
@@ -35,7 +35,9 @@ private[debug] final class DebugProxy(
     Future(server.listen(handleServerMessage)).andThen { case _ => cancel() }
   }
 
-  private def handleClientMessage: MessageConsumer = {
+  private val handleClientMessage: MessageConsumer = {
+    case _ if cancelled =>
+    // ignore
     case RestartRequest(message) =>
       // set the status first, since the server can kill the connection
       exitStatus.trySuccess(Restarted)
@@ -47,6 +49,8 @@ private[debug] final class DebugProxy(
   }
 
   private val handleServerMessage: MessageConsumer = {
+    case _ if cancelled =>
+    // ignore
     case OutputNotification() if outputTerminated =>
     // ignore. When restarting, the output keeps getting printed for a short while after the
     // output window gets refreshed resulting in stale messages being printed on top, before
@@ -57,6 +61,8 @@ private[debug] final class DebugProxy(
   }
 
   def cancel(): Unit = {
+    scribe.info("Canceling debug proxy")
+    cancelled = true
     exitStatus.trySuccess(Terminated)
     Cancelable.cancelAll(List(client, server))
   }
