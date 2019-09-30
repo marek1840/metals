@@ -125,7 +125,11 @@ private[debug] final class RemoteServer(
       }
     }
 
-    response.withTimeout(30, TimeUnit.SECONDS).asJava
+    response.onTimeout(30, TimeUnit.SECONDS)(logTimeout(endpoint)).asJava
+  }
+
+  private def logTimeout(endpoint: String): Unit = {
+    scribe.error(s"Timeout when waiting for a response to $endpoint request")
   }
 
   override def cancel(): Unit = {
