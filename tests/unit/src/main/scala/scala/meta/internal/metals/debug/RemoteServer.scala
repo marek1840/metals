@@ -22,8 +22,6 @@ import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.meta.internal.metals.Cancelable
 import scala.reflect.ClassTag
-import scala.util.Failure
-import scala.util.Success
 import scala.meta.internal.metals.JsonParser._
 import scala.reflect.classTag
 
@@ -122,7 +120,7 @@ private[debug] final class RemoteServer(
       }
     }
 
-    response.onTimeout(30, TimeUnit.SECONDS)(logTimeout(endpoint)).asJava
+    response.onTimeout(90, TimeUnit.SECONDS)(logTimeout(endpoint)).asJava
   }
 
   private def logTimeout(endpoint: String): Unit = {
