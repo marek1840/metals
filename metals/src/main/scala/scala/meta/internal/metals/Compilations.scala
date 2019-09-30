@@ -64,8 +64,8 @@ final class Compilations(
     val targets =
       paths.filter(isCompilable).flatMap(buildTargets.inverseSources).distinct
 
-    if (targets.isEmpty) {
-      scribe.warn(s"no build target: ${paths.mkString("\n  ")}")
+    if (targets.isEmpty && paths.nonEmpty) {
+      scribe.warn(s"no build target for: ${paths.mkString("\n  ")}")
     }
 
     targets
