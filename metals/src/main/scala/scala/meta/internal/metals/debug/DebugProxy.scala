@@ -69,8 +69,6 @@ private[debug] final class DebugProxy(
 }
 
 private[debug] object DebugProxy {
-  import scala.meta.internal.metals.MetalsEnrichments._
-
   sealed trait ExitStatus
   case object Terminated extends ExitStatus
   case object Restarted extends ExitStatus
@@ -80,12 +78,8 @@ private[debug] object DebugProxy {
       connectToServer: () => Future[Socket]
   )(implicit ec: ExecutionContext): Future[DebugProxy] = {
     for {
-      server <- connectToServer()
-        .map(new RemoteEndpoint(_))
-        .withTimeout(10, TimeUnit.SECONDS)
-      client <- awaitClient()
-        .map(new RemoteEndpoint(_))
-        .withTimeout(10, TimeUnit.SECONDS)
+      server <- connectToServer().map(new RemoteEndpoint(_))
+      client <- awaitClient().map(new RemoteEndpoint(_))
     } yield new DebugProxy(client, server)
   }
 }

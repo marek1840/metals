@@ -63,12 +63,15 @@ object DebugServer {
       val uri = URI.create(s"tcp://$host:$port")
       val connectedToServer = Promise[Unit]()
 
-      val awaitClient = () => Future(proxyServer.accept())
+      val awaitClient =
+        () => Future(proxyServer.accept()).withTimeout(10, TimeUnit.SECONDS)
 
+      // TODO comment
       val connectToServer = () => {
         buildServer
           .map(_.startDebugSession(parameters).asScala)
           .getOrElse(BuildServerUnavailableError)
+          .withTimeout(60, TimeUnit.SECONDS)
           .map { uri =>
             val socket = connect(uri)
             connectedToServer.trySuccess(())
