@@ -18,7 +18,8 @@ import scala.util.Failure
 import scala.util.Try
 
 final class DebugServer(
-    val session: DebugSession,
+    val sessionName: String,
+    val uri: URI,
     connect: () => Future[DebugProxy]
 )(implicit ec: ExecutionContext)
     extends Cancelable {
@@ -80,8 +81,8 @@ object DebugServer {
       }
 
       val proxyFactory = () => DebugProxy.open(awaitClient, connectToServer)
-      val session = DebugSession(sessionName, uri.toString)
-      val server = new DebugServer(session, proxyFactory)
+      val server = new DebugServer(sessionName, uri, proxyFactory)
+
       server.listen.andThen { case _ => proxyServer.close() }
 
       connectedToServer.future.map(_ => server)

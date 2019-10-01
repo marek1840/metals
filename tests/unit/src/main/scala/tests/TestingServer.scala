@@ -80,8 +80,8 @@ import com.google.gson.JsonPrimitive
 import scala.meta.internal.tvp.TreeViewProvider
 import org.eclipse.lsp4j.DocumentRangeFormattingParams
 import scala.meta.internal.metals.ServerCommands
-import scala.meta.internal.metals.debug.DebugSession
 import scala.meta.internal.metals.debug.TestDebugger
+import scala.meta.internal.metals.DebugSession
 
 /**
  * Wrapper around `MetalsLanguageServer` with helpers methods for testing purpopses.

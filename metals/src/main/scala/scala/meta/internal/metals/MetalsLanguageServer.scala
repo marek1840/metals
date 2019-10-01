@@ -1121,7 +1121,7 @@ class MetalsLanguageServer(
               .flatMap(DebugServer.start(_, buildServer))
               .map { server =>
                 cancelables.add(server)
-                server.session
+                DebugSession(server.sessionName, server.uri.toString)
               }
 
             session.asJavaObject
