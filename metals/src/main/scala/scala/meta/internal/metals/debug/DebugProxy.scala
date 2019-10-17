@@ -2,13 +2,16 @@ package scala.meta.internal.metals.debug
 
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
+import org.eclipse.lsp4j.debug.InitializeRequestArgumentsPathFormat
 import org.eclipse.lsp4j.jsonrpc.MessageConsumer
-import scala.concurrent.Promise
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.concurrent.Promise
 import scala.meta.internal.metals.Cancelable
+import scala.meta.internal.metals.debug.DebugProtocol.InitializeRequest
 import scala.meta.internal.metals.debug.DebugProtocol.OutputNotification
 import scala.meta.internal.metals.debug.DebugProtocol.RestartRequest
+import scala.meta.internal.metals.debug.DebugProtocol.SetBreakpoints
 import scala.meta.internal.metals.debug.DebugProxy._
 
 private[debug] final class DebugProxy(
@@ -36,8 +39,22 @@ private[debug] final class DebugProxy(
     Future(server.listen(handleServerMessage)).andThen { case _ => cancel() }
   }
 
+  private val breakpointRequestAdapter = new BreakpointRequestAdapter
+
   private val handleClientMessage: MessageConsumer = {
     case _ if cancelled.get() =>
+    case message @ InitializeRequest(args) =>
+      if (args.getPathFormat == InitializeRequestArgumentsPathFormat.PATH) {
+        breakpointRequestAdapter.adaptPathToURI()
+      }
+
+      server.consume(message)
+
+    case SetBreakpoints(args) =>
+      val requests = breakpointRequestAdapter.adapt(args)
+      requests
+        .map(DebugProtocol.toRequest)
+        .foreach(server.consume)
     // ignore
     case RestartRequest(message) =>
       // set the status first, since the server can kill the connection
