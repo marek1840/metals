@@ -34,7 +34,7 @@ private[debug] final class RemoteServer(
 
   private val remote = new SocketEndpoint(socket)
   private val ongoing = new TrieMap[String, Response => Unit]()
-  private val id = new AtomicInteger(0)
+  private val id = new AtomicInteger(1)
   lazy val listening: Future[Unit] = Future(listen())
 
   override def initialize(
@@ -61,6 +61,54 @@ private[debug] final class RemoteServer(
     sendRequest("disconnect", args)
   }
 
+  override def setBreakpoints(
+      args: SetBreakpointsArguments
+  ): CompletableFuture[SetBreakpointsResponse] = {
+    sendRequest("setBreakpoints", args)
+  }
+
+  override def stackTrace(
+      args: StackTraceArguments
+  ): CompletableFuture[StackTraceResponse] = {
+    sendRequest("stackTrace", args)
+  }
+
+  override def scopes(
+      args: ScopesArguments
+  ): CompletableFuture[ScopesResponse] = {
+    sendRequest("scopes", args)
+  }
+
+  override def variables(
+      args: VariablesArguments
+  ): CompletableFuture[VariablesResponse] = {
+    sendRequest("variables", args)
+  }
+
+  override def continue_(
+      args: ContinueArguments
+  ): CompletableFuture[ContinueResponse] = {
+    sendRequest("continue", args)
+  }
+
+  override def next(
+      args: NextArguments
+  ): CompletableFuture[Void] = {
+    sendRequest("next", args)
+  }
+
+  override def stepIn(
+      args: StepInArguments
+  ): CompletableFuture[Void] = {
+    sendRequest("stepIn", args)
+  }
+
+  override def stepOut(
+      args: StepOutArguments
+  ): CompletableFuture[Void] = {
+    sendRequest("stepOut", args)
+  }
+
   private def listen(): Unit = {
     remote.listen {
       case response: Response =>
@@ -73,9 +121,11 @@ private[debug] final class RemoteServer(
       case notification: Notification =>
         notification.getMethod match {
           case "output" =>
-            notify[OutputEventArguments](notification, listener.onOutput)
+            notify(notification, listener.onOutput)
           case "terminated" =>
             listener.onTerminated()
+          case "stopped" =>
+            notify(notification, listener.onStopped)
           case _ =>
             scribe.debug(s"Unsupported notification: ${notification.getMethod}")
         }
@@ -115,6 +165,8 @@ private[debug] final class RemoteServer(
           Future[Void](null).asInstanceOf[Future[B]]
         case json: JsonElement =>
           Future.fromTry(json.as[B])
+        case _ if response.getError != null =>
+          Future.failed(new IllegalStateException(response.getError.getMessage))
         case result =>
           Future.failed(new IllegalStateException(s"not a json: $result"))
       }
@@ -136,6 +188,7 @@ object RemoteServer {
   trait Listener {
     def onOutput(output: OutputEventArguments): Unit
     def onTerminated(): Unit
+    def onStopped(args: StoppedEventArguments): Unit
   }
 
   def apply(socket: Socket, listener: Listener)(

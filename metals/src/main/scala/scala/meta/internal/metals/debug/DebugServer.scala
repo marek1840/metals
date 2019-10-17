@@ -14,6 +14,9 @@ import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.meta.internal.metals.BuildServerConnection
 import scala.meta.internal.metals.Cancelable
+import scala.meta.internal.metals.ClassPathSourceIndex
+import scala.meta.internal.metals.DefinitionProvider
+import scala.meta.internal.mtags.OnDemandSymbolIndex
 import scala.util.Failure
 import scala.util.Try
 
@@ -55,7 +58,10 @@ object DebugServer {
 
   def start(
       parameters: b.DebugSessionParams,
-      buildServer: => Option[BuildServerConnection]
+      buildServer: => Option[BuildServerConnection],
+      classPathSources: ClassPathSourceIndex,
+      definitionProvider: DefinitionProvider,
+      onDemandSymbolIndex: OnDemandSymbolIndex
   )(implicit ec: ExecutionContext): Future[DebugServer] = {
     Future.fromTry(parseSessionName(parameters)).flatMap { sessionName =>
       val proxyServer = new ServerSocket(0)
@@ -80,8 +86,16 @@ object DebugServer {
           }
       }
 
-      val proxyFactory =
-        () => DebugProxy.open(sessionName, awaitClient, connectToServer)
+      val proxyFactory = () => {
+        val sourceAdapter =
+          new RelativeSourceAdapter(
+            classPathSources,
+            onDemandSymbolIndex,
+            definitionProvider
+          )
+        DebugProxy
+          .open(sessionName, awaitClient, connectToServer, sourceAdapter)
+      }
       val server = new DebugServer(sessionName, uri, proxyFactory)
 
       server.listen.andThen { case _ => proxyServer.close() }

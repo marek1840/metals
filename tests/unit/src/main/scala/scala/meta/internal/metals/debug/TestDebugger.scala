@@ -1,123 +1,170 @@
 package scala.meta.internal.metals.debug
-
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URI
-import java.util.Collections
 import java.util.concurrent.TimeUnit
 import org.eclipse.lsp4j.debug.Capabilities
-import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
-import org.eclipse.lsp4j.debug.DisconnectArguments
-import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.OutputEventArguments
-import scala.collection.mutable
+import org.eclipse.lsp4j.debug.SetBreakpointsResponse
+import org.eclipse.lsp4j.debug.StoppedEventArguments
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
+import scala.meta.inputs.Position
 import scala.meta.internal.metals.MetalsEnrichments._
-import scala.meta.internal.metals.debug.TestDebugger.Prefix
+import scala.meta.io.AbsolutePath
+import tests.DapEnrichments._
+import scala.util.Failure
+import scala.util.Success
 
-final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
-    implicit ec: ExecutionContext
-) extends RemoteServer.Listener {
-
-  @volatile private var server: RemoteServer = connect(this)
-  private var terminationPromise = Promise[Unit]()
-  private val outputBuffer = new StringBuilder
-  private val prefixes = mutable.Set.empty[Prefix]
+final class TestDebugger(
+    connect: RemoteServer.Listener => Debugger,
+    onStoppage: Stoppage.Handler
+)(implicit ec: ExecutionContext)
+    extends RemoteServer.Listener {
+  @volatile private var debugger = connect(this)
+  @volatile private var terminated: Promise[Unit] = Promise()
+  @volatile private var output = new DebuggeeOutput
+  @volatile private var breakpoints = new DebuggeeBreakpoints()
+  @volatile private var failed: Option[Throwable] = None
 
   def initialize: Future[Capabilities] = {
-    val arguments = new InitializeRequestArguments
-    arguments.setAdapterID("test-adapter")
-    server.initialize(arguments).asScala
+    ifNotFailed(debugger.initialize)
   }
 
   def launch: Future[Unit] = {
-    for {
-      _ <- server.launch(Collections.emptyMap()).asScala
-      _ <- server.configurationDone(new ConfigurationDoneArguments).asScala
-    } yield ()
+    ifNotFailed(debugger.launch)
+  }
+
+  def configurationDone: Future[Unit] = {
+    ifNotFailed(debugger.configurationDone)
+  }
+
+  def setBreakpoints(
+      path: AbsolutePath,
+      position: Position
+  ): Future[SetBreakpointsResponse] = {
+    val source = path.toDAP
+    val breakpoints = Array(position.toBreakpoint)
+    ifNotFailed(debugger.setBreakpoints(source, breakpoints))
+      .map { response =>
+        // the breakpoint notification we receive does not contain the source
+        // hence we have to register breakpoints here
+        response.getBreakpoints.foreach(this.breakpoints.register)
+        response
+      }
   }
 
   def restart: Future[Unit] = {
-    val args = new DisconnectArguments
-    args.setRestart(true)
-    for {
-      _ <- server.disconnect(args).asScala
-      _ <- awaitCompletion
-    } yield {
-      terminationPromise = Promise()
-      server = connect(this)
-      outputBuffer.clear()
-    }
+    ifNotFailed(debugger.restart)
+      .andThen {
+        case _ =>
+          debugger = connect(this)
+          terminated = Promise()
+          output = new DebuggeeOutput
+          breakpoints = new DebuggeeBreakpoints
+      }
   }
 
   def disconnect: Future[Unit] = {
-    val args = new DisconnectArguments
-    args.setRestart(false)
-    args.setTerminateDebuggee(false)
-    server.disconnect(args).asScala.ignoreValue
+    ifNotFailed(debugger.disconnect)
   }
 
   /**
    * Not waiting for exited because it might not be sent
    */
-  def awaitCompletion: Future[Unit] = {
+  def shutdown: Future[Unit] = {
     for {
-      _ <- terminationPromise.future
-      _ <- server.listening.onTimeout(20, TimeUnit.SECONDS)(this.close())
+      _ <- terminated.future
+      _ <- debugger.shutdown
     } yield ()
   }
 
-  def awaitOutput(expected: String): Future[Unit] = {
-    val prefix = Prefix(expected, Promise())
-    prefixes += prefix
-
-    if (output.startsWith(expected)) {
-      prefix.promise.success(())
-      prefixes -= prefix
-    }
-
-    prefix.promise.future
+  def awaitOutput(prefix: String, seconds: Int = 5): Future[Unit] = {
+    import org.eclipse.lsp4j.debug.{OutputEventArgumentsCategory => Category}
+    ifNotFailed(output.awaitPrefix(Category.STDOUT, prefix))
+      .withTimeout(seconds, TimeUnit.SECONDS)
   }
 
-  def output: String = outputBuffer.toString()
+  def allOutput: Future[String] = {
+    import org.eclipse.lsp4j.debug.{OutputEventArgumentsCategory => Category}
+    terminated.future.map { _ =>
+      output.get(Category.STDOUT)
+    }
+  }
 
-  def close(): Unit = {
-    server.cancel()
-    prefixes.foreach { prefix =>
-      val message = s"Output did not start with ${prefix.pattern}"
-      prefix.promise.failure(new IllegalStateException(message))
+  override def onStopped(event: StoppedEventArguments): Unit = {
+    val nextStep = for {
+      frame <- ifNotFailed(debugger.stackFrame(event.getThreadId))
+      cause <- {
+        import org.eclipse.lsp4j.debug.{StoppedEventArgumentsReason => Reason}
+        event.getReason match {
+          case Reason.BREAKPOINT =>
+            breakpoints.byStackFrame(frame) match {
+              case Some(breakpoint) =>
+                Future.successful(Stoppage.Cause.Breakpoint(breakpoint))
+              case None =>
+                val error = s"No breakpoint for ${frame.info.getSource}"
+                Future.failed(new IllegalStateException(error))
+            }
+          case Reason.STEP =>
+            Future.successful(Stoppage.Cause.Step)
+          case reason =>
+            val error = s"Unsupported stoppage reason: $reason"
+            Future.failed(new IllegalStateException(error))
+        }
+      }
+      nextStep <- onStoppage(Stoppage(frame, cause))
+    } yield nextStep
+
+    nextStep.onComplete {
+      case Failure(error) =>
+        fail(error)
+      case Success(step) =>
+        debugger.step(event.getThreadId, step).recover {
+          case error => fail(error)
+        }
     }
   }
 
   override def onOutput(event: OutputEventArguments): Unit = {
-    outputBuffer.append(event.getOutput)
-    val out = output
-    val matched = prefixes.filter(prefix => out.startsWith(prefix.pattern))
-    matched.foreach { prefix =>
-      prefixes.remove(prefix)
-      prefix.promise.success(())
-    }
+    output.append(event)
   }
 
   override def onTerminated(): Unit = {
-    terminationPromise.trySuccess(())
+    terminated.success(())
+  }
+
+  private def fail(error: Throwable): Unit = {
+    failed = Some(error)
+    terminated.tryFailure(error)
+    disconnect.andThen { case _ => debugger.shutdown }
+  }
+
+  private def ifNotFailed[A](action: => Future[A]): Future[A] = {
+    failed match {
+      case None =>
+        action
+      case Some(error) =>
+        Future.failed(error)
+    }
   }
 }
 
 object TestDebugger {
   private val timeout = TimeUnit.SECONDS.toMillis(60).toInt
 
-  def apply(uri: URI)(implicit ec: ExecutionContext): TestDebugger = {
-    def connect(listener: RemoteServer.Listener): RemoteServer = {
+  def apply(uri: URI, stoppageHandler: Stoppage.Handler)(
+      implicit ec: ExecutionContext
+  ): TestDebugger = {
+    def connect(listener: RemoteServer.Listener): Debugger = {
       val socket = new Socket()
       socket.connect(new InetSocketAddress(uri.getHost, uri.getPort), timeout)
-      RemoteServer(socket, listener)
+      val server = RemoteServer(socket, listener)
+      new Debugger(server)
     }
 
-    new TestDebugger(connect)
+    new TestDebugger(connect, stoppageHandler)
   }
 
-  final case class Prefix(pattern: String, promise: Promise[Unit])
 }
