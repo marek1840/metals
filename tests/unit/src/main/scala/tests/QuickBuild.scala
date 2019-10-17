@@ -1,18 +1,17 @@
 package tests
 
-import bloop.config.ConfigEncoderDecoders._
+import bloop.config.ConfigCodecs
 import bloop.config.{Config => C}
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.google.gson.stream.MalformedJsonException
-import io.circe.syntax._
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.MessageDigest
 import bloop.config.Config
+import com.google.gson.stream.MalformedJsonException
 import coursierapi.Dependency
 import coursierapi.Fetch
 import coursierapi.Repository
@@ -281,12 +280,7 @@ object QuickBuild {
   val Half: Regex = "(.+)::(.+):(.+)".r
   val Java: Regex = "(.+):(.+):(.+)".r
   def parseJson(text: String): JsonObject = {
-    try new JsonParser().parse(text).getAsJsonObject
-    catch {
-      case _: MalformedJsonException =>
-        val Left(e) = io.circe.parser.parse(text)
-        throw e
-    }
+    new JsonParser().parse(text).getAsJsonObject
   }
 
   def newDigest(workspace: AbsolutePath): Option[(AbsolutePath, String)] = {
@@ -348,7 +342,7 @@ object QuickBuild {
           }
           fullClasspathProjects.foreach { bloop =>
             val out = bloopDirectory.resolve(bloop.name + ".json")
-            val json = C.File(V.bloopVersion, bloop).asJson.spaces2
+            val json = ConfigCodecs.toStr(C.File(V.bloopVersion, bloop))
             Files.write(out, json.getBytes(StandardCharsets.UTF_8))
           }
           Files.createDirectories(digestFile.toNIO.getParent)

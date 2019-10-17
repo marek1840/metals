@@ -80,6 +80,7 @@ import scala.meta.internal.metals.ClientExperimentalCapabilities
 import scala.meta.internal.metals.ServerCommands
 import scala.meta.internal.metals.debug.TestDebugger
 import scala.meta.internal.metals.DebugSession
+import scala.meta.internal.metals.debug.Stoppage
 import scala.util.matching.Regex
 import org.eclipse.lsp4j.RenameParams
 import scala.meta.internal.metals.TextEdits
@@ -304,14 +305,17 @@ final class TestingServer(
   def startDebugging(
       a: String,
       kind: String,
-      parameter: AnyRef
+      parameter: AnyRef,
+      stoppageHandler: Stoppage.Handler = Stoppage.Handler.Continue
   ): Future[TestDebugger] = {
     val targets = List(new b.BuildTargetIdentifier(buildTarget(a)))
     val params =
       new b.DebugSessionParams(targets.asJava, kind, parameter.toJson)
 
-    executeCommand(ServerCommands.StartDebugAdapter.id, params)
-      .collect { case DebugSession(_, uri) => TestDebugger(URI.create(uri)) }
+    executeCommand(ServerCommands.StartDebugAdapter.id, params).collect {
+      case DebugSession(_, uri) =>
+        TestDebugger(URI.create(uri), stoppageHandler)
+    }
   }
 
   def didFocus(filename: String): Future[DidFocusResult.Value] = {

@@ -102,6 +102,7 @@ class MetalsLanguageServer(
   private val focusedDocumentBuildTarget =
     new AtomicReference[b.BuildTargetIdentifier]()
   private val definitionIndex = newSymbolIndex()
+  private val classNameIndex = new ClassPathSourceIndex
   private val symbolDocs = new Docstrings(definitionIndex)
   var buildServer: Option[BuildServerConnection] =
     Option.empty[BuildServerConnection]
@@ -1167,7 +1168,16 @@ class MetalsLanguageServer(
           case Seq(param: JsonElement) =>
             val session = Future
               .fromTry(param.as[b.DebugSessionParams])
-              .flatMap(DebugServer.start(_, buildServer))
+              .flatMap(
+                DebugServer
+                  .start(
+                    _,
+                    buildServer,
+                    classNameIndex,
+                    definitionProvider,
+                    definitionIndex
+                  )
+              )
               .map { server =>
                 cancelables.add(server)
                 DebugSession(server.sessionName, server.uri.toString)
@@ -1429,6 +1439,7 @@ class MetalsLanguageServer(
       val reluri = source.toIdeallyRelativeURI(sourceItem)
       val input = source.toInput
       val symbols = ArrayBuffer.empty[WorkspaceSymbolInformation]
+      val packagePath = new mutable.StringBuilder()
       SemanticdbDefinition.foreach(input) {
         case SemanticdbDefinition(info, occ, owner) =>
           if (WorkspaceSymbolProvider.isRelevantKind(info.kind)) {
@@ -1440,6 +1451,9 @@ class MetalsLanguageServer(
               )
             }
           }
+          if (info.kind.isPackage) {
+            packagePath.append(info.symbol) // package symbol already ends with "/"
+          }
           if (sourceItem.isDefined &&
             !info.symbol.isPackage &&
             owner.isPackage) {
@@ -1447,6 +1461,8 @@ class MetalsLanguageServer(
           }
       }
       workspaceSymbols.didChange(source, symbols)
+      val classpathLocation = packagePath + reluri
+      classNameIndex.register(classpathLocation, source)
     } catch {
       case NonFatal(e) =>
         scribe.error(source.toString(), e)
@@ -1644,7 +1660,8 @@ class MetalsLanguageServer(
       path,
       () => {
         tables.jarSymbols.getTopLevels(path) match {
-          case Some(toplevels) => toplevels
+          case Some(toplevels) =>
+            toplevels
           case None =>
             // Nothing in cache, read top level symbols and store them in cache
             val tempIndex = OnDemandSymbolIndex(onError = {

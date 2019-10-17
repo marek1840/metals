@@ -148,7 +148,7 @@ lazy val V = new {
   val scalameta = "4.2.5"
   val semanticdb = scalameta
   val bsp = "2.0.0-M4+10-61e61e87"
-  val bloop = "1.3.5"
+  val bloop = "1.3.4+217-7e85e170"
   val sbtBloop = bloop
   val gradleBloop = bloop
   val mavenBloop = bloop
@@ -163,7 +163,7 @@ lazy val V = new {
   def lsp4j = "org.eclipse.lsp4j" % "org.eclipse.lsp4j" % "0.8.0"
   def dap4j =
     "org.eclipse.lsp4j" % "org.eclipse.lsp4j.debug" % "0.8.0"
-  val coursier = "2.0.0-RC5-2"
+  val coursier = "2.0.0-RC3-4"
 }
 
 skip.in(publish) := true

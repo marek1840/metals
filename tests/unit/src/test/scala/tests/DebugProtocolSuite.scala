@@ -44,7 +44,7 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
         new ScalaMainClass("a.Main", emptyList(), emptyList())
       )
       _ <- debugger.initialize
-      _ <- debugger.launch
+      _ <- debugger.start
       _ <- debugger.awaitCompletion
     } yield assertNoDiff(debugger.output, "Foo")
   }
@@ -71,7 +71,7 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
         new ScalaMainClass("a.Main", emptyList(), emptyList())
       )
       _ <- debugger.initialize
-      _ <- debugger.launch
+      _ <- debugger.start
       _ <- debugger.disconnect
       _ <- debugger.awaitCompletion
     } yield assertNoDiff(debugger.output, "")
@@ -100,7 +100,7 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
         new ScalaMainClass("a.Main", emptyList(), emptyList())
       )
       _ <- debugger.initialize
-      _ <- debugger.launch
+      _ <- debugger.start
       _ <- debugger.awaitOutput("Foo\n").withTimeout(5, SECONDS)
 
       _ <- server.didSave("a/src/main/scala/a/Main.scala")(
@@ -109,7 +109,7 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
       _ <- debugger.restart
 
       _ <- debugger.initialize
-      _ <- debugger.launch
+      _ <- debugger.start
       _ <- debugger.awaitOutput("Bar\n").withTimeout(5, SECONDS)
       _ <- debugger.disconnect
       _ <- debugger.awaitCompletion
