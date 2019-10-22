@@ -9,12 +9,15 @@ import org.eclipse.lsp4j.jsonrpc.json.StreamMessageConsumer
 import org.eclipse.lsp4j.jsonrpc.json.StreamMessageProducer
 import org.eclipse.lsp4j.jsonrpc.messages.Message
 import scala.meta.internal.metals.Cancelable
-import scala.meta.internal.metals.debug.RemoteEndpoint._
 
-private[debug] final class RemoteEndpoint(socket: Socket)
+trait RemoteEndpoint
     extends MessageConsumer
     with MessageProducer
-    with Cancelable {
+    with Cancelable
+
+private[debug] final class SocketEndpoint(socket: Socket)
+    extends RemoteEndpoint {
+  import scala.meta.internal.metals.debug.SocketEndpoint._
   private val source = messageSource(socket)
   private val target = messageTarget(socket)
 
@@ -32,7 +35,7 @@ private[debug] final class RemoteEndpoint(socket: Socket)
   }
 }
 
-private[debug] object RemoteEndpoint {
+private[debug] object SocketEndpoint {
   private val handler = new DebugMessageJsonHandler(Collections.emptyMap())
 
   private def messageSource(socket: Socket): StreamMessageProducer = {

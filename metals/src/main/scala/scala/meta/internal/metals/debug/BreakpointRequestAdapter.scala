@@ -11,24 +11,29 @@ private[debug] final class BreakpointRequestAdapter {
     adaptPath = path => "file://" + path
   }
 
-  def adapt(
+  def partition(
       original: SetBreakpointsArguments
   ): Iterable[SetBreakpointsArguments] = {
     import scala.meta.internal.metals.MetalsEnrichments._
 
     val uri = adaptPath(original.getSource.getPath)
-    val input = uri.toAbsolutePath.toInput
-    val occurrences = Mtags.allToplevels(input).occurrences
+    val input = try {
+      uri.toAbsolutePath.toInput
+    } catch {
+      case _: Exception =>
+        return Nil
+    }
 
-    val breakpoints = original.getBreakpoints.groupBy { breakpoint =>
+    val occurrences = Mtags.allToplevels(input).occurrences
+    val groups = original.getBreakpoints.groupBy { breakpoint =>
       val definition = occurrences.minBy(distanceFrom(breakpoint))
       toFQCN(definition)
     }
 
-    breakpoints.map {
+    groups.map {
       case (fqcn, breakpoints) =>
         val source = DebugProtocol.copy(original.getSource)
-        source.setPath(uri + s"?fqcn=$fqcn")
+        source.setPath(s"jvm:fqcn:$fqcn")
 
         val lines = breakpoints.map(_.getLine).distinct
 
@@ -45,11 +50,35 @@ private[debug] final class BreakpointRequestAdapter {
       breakpoint: SourceBreakpoint
   ): SymbolOccurrence => Long = { occ =>
     val startLine = occ.range.fold(Int.MaxValue)(_.startLine)
-    math.abs(breakpoint.getLine - startLine)
+    // TODO - 1 because of vscode config
+    math.abs(breakpoint.getLine - 1 - startLine)
   }
 
   private def toFQCN(definition: SymbolOccurrence) = {
     import scala.meta.internal.semanticdb.Scala._
-    definition.symbol.owner.replaceAll("/", ".") + definition.symbol.desc.name
+    def qualifier(symbol: String, acc: List[String]): String = {
+      val owner = symbol.owner
+      if (owner == Symbols.RootPackage || owner == Symbols.EmptyPackage) {
+        acc.mkString
+      } else {
+        val desc = owner.desc
+        // can only be a package or type
+        val delimiter = if (desc.isPackage) "." else "$"
+        val segment = desc.name + delimiter
+        qualifier(owner, segment :: acc)
+      }
+    }
+
+    def name(symbol: String): String = {
+      val desc = symbol.desc
+      val name = desc.name
+
+      val suffix = if (desc.isTerm) "$" else ""
+      name + suffix
+    }
+
+    val symbol = definition.symbol
+    val fqcn = qualifier(symbol, Nil) + name(symbol)
+    fqcn
   }
 }
