@@ -17,12 +17,7 @@ private[debug] final class BreakpointRequestAdapter {
     import scala.meta.internal.metals.MetalsEnrichments._
 
     val uri = adaptPath(original.getSource.getPath)
-    val input = try {
-      uri.toAbsolutePath.toInput
-    } catch {
-      case _: Exception =>
-        return Nil
-    }
+    val input = uri.toAbsolutePath.toInput
 
     val occurrences = Mtags.allToplevels(input).occurrences
     val groups = original.getBreakpoints.groupBy { breakpoint =>

@@ -12,7 +12,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.meta.internal.metals.Cancelable
-import scala.meta.internal.metals.ClassPathSourceIndex
+import scala.meta.internal.metals.GlobalTrace
 import scala.meta.internal.metals.debug.DebugProtocol.InitializeRequest
 import scala.meta.internal.metals.debug.DebugProtocol.OutputNotification
 import scala.meta.internal.metals.debug.DebugProtocol.RestartRequest
@@ -71,6 +71,10 @@ private[debug] final class DebugProxy(
           .reduceOption(_ ++ _)
           .getOrElse(Array.empty)
 
+        breakpoints.foreach { breakpoint =>
+          breakpoint.setSource(args.getSource)
+        }
+
         val response = new SetBreakpointsResponse
         response.setBreakpoints(breakpoints)
         response
@@ -102,10 +106,11 @@ private[debug] final class DebugProxy(
             val respone = DebugProtocol.toResponse(message.getId, source)
             client.consume(respone)
           case None =>
-            ???
+            server.send(message)
         }
+      } else {
         server.send(message)
-      } else {}
+      }
     case message =>
       server.send(message)
   }
@@ -150,8 +155,12 @@ private[debug] object DebugProxy {
       sourceAdapter: RelativeSourceAdapter
   )(implicit ec: ExecutionContext): Future[DebugProxy] = {
     for {
-      server <- connectToServer().map(new SocketEndpoint(_))
-      client <- awaitClient().map(new SocketEndpoint(_))
+      server <- connectToServer()
+        .map(new SocketEndpoint(_))
+        .map(endpoint => withLogger(endpoint, "dap-server"))
+      client <- awaitClient()
+        .map(new SocketEndpoint(_))
+        .map(endpoint => withLogger(endpoint, "dap-client"))
     } yield
       new DebugProxy(
         sourceAdapter,
@@ -159,5 +168,12 @@ private[debug] object DebugProxy {
         client,
         new ServerAdapter(server)
       )
+  }
+
+  private def withLogger(
+      endpoint: RemoteEndpoint,
+      name: String
+  ): RemoteEndpoint = {
+    new EndpointLogger(endpoint, GlobalTrace.setup(name))
   }
 }
