@@ -5,17 +5,35 @@ import java.net.Socket
 import java.net.URI
 import java.util.Collections
 import java.util.concurrent.TimeUnit
+import org.eclipse.lsp4j.debug.Breakpoint
+import org.eclipse.lsp4j.debug.BreakpointEventArguments
 import org.eclipse.lsp4j.debug.Capabilities
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
+import org.eclipse.lsp4j.debug.ContinueArguments
+import org.eclipse.lsp4j.debug.ContinueResponse
 import org.eclipse.lsp4j.debug.DisconnectArguments
 import org.eclipse.lsp4j.debug.InitializeRequestArguments
 import org.eclipse.lsp4j.debug.OutputEventArguments
+import org.eclipse.lsp4j.debug.ScopesArguments
+import org.eclipse.lsp4j.debug.ScopesResponse
+import org.eclipse.lsp4j.debug.SetBreakpointsArguments
+import org.eclipse.lsp4j.debug.SetBreakpointsResponse
+import org.eclipse.lsp4j.debug.StackFrame
+import org.eclipse.lsp4j.debug.StackTraceArguments
+import org.eclipse.lsp4j.debug.StackTraceResponse
+import org.eclipse.lsp4j.debug.StoppedEventArguments
+import org.eclipse.lsp4j.debug.ThreadEventArguments
+import org.eclipse.lsp4j.debug.VariablesArguments
+import org.eclipse.lsp4j.debug.VariablesResponse
+import scala.collection.concurrent.TrieMap
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
+import scala.meta.inputs.Position
 import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.metals.debug.TestDebugger.Prefix
+import scala.meta.io.AbsolutePath
 
 final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
     implicit ec: ExecutionContext
@@ -25,6 +43,7 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
   private var terminationPromise = Promise[Unit]()
   private val outputBuffer = new StringBuilder
   private val prefixes = mutable.Set.empty[Prefix]
+  private val breakpoints = new Breakpoints(this)
 
   def initialize: Future[Capabilities] = {
     val arguments = new InitializeRequestArguments
@@ -33,9 +52,17 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
   }
 
   def launch: Future[Unit] = {
+    server.launch(Collections.emptyMap()).asScala.ignoreValue
+  }
+
+  def configurationDone: Future[Unit] = {
+    server.configurationDone(new ConfigurationDoneArguments).asScala.ignoreValue
+  }
+
+  def start: Future[Unit] = {
     for {
-      _ <- server.launch(Collections.emptyMap()).asScala
-      _ <- server.configurationDone(new ConfigurationDoneArguments).asScala
+      _ <- launch
+      _ <- configurationDone
     } yield ()
   }
 
@@ -49,6 +76,7 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
       terminationPromise = Promise()
       server = connect(this)
       outputBuffer.clear()
+      breakpoints.clear()
     }
   }
 
@@ -57,6 +85,41 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
     args.setRestart(false)
     args.setTerminateDebuggee(false)
     server.disconnect(args).asScala.ignoreValue
+  }
+
+  def setBreakpoints(
+      path: AbsolutePath,
+      position: Position
+  ): Future[SetBreakpointsResponse] = {
+    import tests.DapEnrichments._
+    val args = new SetBreakpointsArguments
+    args.setSource(path.toDAP)
+    args.setBreakpoints(Array(position.toBreakpoint))
+    server.setBreakpoints(args).asScala
+  }
+
+  def stackTrace(thread: Long): Future[StackTraceResponse] = {
+    val args = new StackTraceArguments
+    args.setThreadId(thread)
+    server.stackTrace(args).asScala
+  }
+
+  def scopes(frame: Long): Future[ScopesResponse] = {
+    val args = new ScopesArguments
+    args.setFrameId(frame)
+    server.scopes(args).asScala
+  }
+
+  def variables(id: Long): Future[VariablesResponse] = {
+    val args = new VariablesArguments
+    args.setVariablesReference(id)
+    server.variables(args).asScala
+  }
+
+  def continue(threadId: Long): Future[ContinueResponse] = {
+    val continueArgs = new ContinueArguments
+    continueArgs.setThreadId(threadId)
+    server.continue_(continueArgs).asScala
   }
 
   /**
@@ -83,6 +146,8 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
 
   def output: String = outputBuffer.toString()
 
+  def breakpointUsage = breakpoints()
+
   def close(): Unit = {
     server.cancel()
     prefixes.foreach { prefix =>
@@ -103,6 +168,33 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
 
   override def onTerminated(): Unit = {
     terminationPromise.trySuccess(())
+  }
+
+  override def onThread(args: ThreadEventArguments): Unit = {
+    println(args)
+  }
+
+  override def onBreakpoint(args: BreakpointEventArguments): Unit = {
+    import org.eclipse.lsp4j.debug.{BreakpointEventArgumentsReason => Reason}
+    val breakpoint = args.getBreakpoint
+    args.getReason match {
+      case Reason.NEW | Reason.CHANGED =>
+        breakpoints.update(breakpoint)
+      case Reason.REMOVED =>
+        breakpoints.remove(breakpoint)
+    }
+  }
+
+  override def onStopped(args: StoppedEventArguments): Unit = {
+    import org.eclipse.lsp4j.debug.{StoppedEventArgumentsReason => Reason}
+    args.getReason match {
+      case Reason.BREAKPOINT =>
+        breakpoints.onStopped(args.getThreadId)
+      case _ =>
+        Future.failed(
+          new IllegalStateException(s"Unsupported reason ${args.getReason}")
+        )
+    }
   }
 }
 

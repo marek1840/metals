@@ -10,7 +10,7 @@ import scala.meta.internal.metals.Cancelable
 
 final class ServerAdapter(server: RemoteEndpoint)(implicit ec: ExecutionContext)
     extends Cancelable {
-  private val idAdapter = new MessageIdAdapter
+//  private val idAdapter = new ServerMessageIdAdapter
   private val partitions = TrieMap.empty[String, ResponseMessage => Unit]
 
   def onServerMessage(consumer: Message => Unit): Unit = {
@@ -21,13 +21,13 @@ final class ServerAdapter(server: RemoteEndpoint)(implicit ec: ExecutionContext)
           .foreach(callback => callback(response))
       // doesn't use the consumer. Partitioned messages are handled as a future
       case message =>
-        idAdapter.adaptMessageFromServer(message)
+//        idAdapter.adaptMessageFromServer(message)
         consumer(message)
     }
   }
 
   def send(message: Message): Unit = {
-    idAdapter.adaptMessageFromClient(message)
+//    idAdapter.adaptMessageFromClient(message)
     server.consume(message)
   }
 
@@ -35,7 +35,7 @@ final class ServerAdapter(server: RemoteEndpoint)(implicit ec: ExecutionContext)
       parts: Iterable[RequestMessage]
   ): Future[Iterable[ResponseMessage]] = {
     val responses = parts.map { request =>
-      idAdapter.adaptMessageFromClient(request) // fills the id if missing
+//      idAdapter.adaptMessageFromClient(request) // fills the id if missing
 
       val promise = Promise[ResponseMessage]
       partitions += (request.getId -> promise.success)

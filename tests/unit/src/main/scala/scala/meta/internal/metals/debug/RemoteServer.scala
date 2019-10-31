@@ -34,7 +34,7 @@ private[debug] final class RemoteServer(
 
   private val remote = new SocketEndpoint(socket)
   private val ongoing = new TrieMap[String, Response => Unit]()
-  private val id = new AtomicInteger(0)
+  private val id = new AtomicInteger(1)
   lazy val listening: Future[Unit] = Future(listen())
 
   override def initialize(
@@ -61,6 +61,36 @@ private[debug] final class RemoteServer(
     sendRequest("disconnect", args)
   }
 
+  override def setBreakpoints(
+      args: SetBreakpointsArguments
+  ): CompletableFuture[SetBreakpointsResponse] = {
+    sendRequest("setBreakpoints", args)
+  }
+
+  override def stackTrace(
+      args: StackTraceArguments
+  ): CompletableFuture[StackTraceResponse] = {
+    sendRequest("stackTrace", args)
+  }
+
+  override def scopes(
+      args: ScopesArguments
+  ): CompletableFuture[ScopesResponse] = {
+    sendRequest("scopes", args)
+  }
+
+  override def variables(
+      args: VariablesArguments
+  ): CompletableFuture[VariablesResponse] = {
+    sendRequest("variables", args)
+  }
+
+  override def continue_(
+      args: ContinueArguments
+  ): CompletableFuture[ContinueResponse] = {
+    sendRequest("continue", args)
+  }
+
   private def listen(): Unit = {
     remote.listen {
       case response: Response =>
@@ -73,9 +103,15 @@ private[debug] final class RemoteServer(
       case notification: Notification =>
         notification.getMethod match {
           case "output" =>
-            notify[OutputEventArguments](notification, listener.onOutput)
+            notify(notification, listener.onOutput)
           case "terminated" =>
             listener.onTerminated()
+          case "thread" =>
+            notify(notification, listener.onThread)
+          case "breakpoint" =>
+            notify(notification, listener.onBreakpoint)
+          case "stopped" =>
+            notify(notification, listener.onStopped)
           case _ =>
             scribe.debug(s"Unsupported notification: ${notification.getMethod}")
         }
@@ -99,6 +135,8 @@ private[debug] final class RemoteServer(
       endpoint: String,
       arg: A
   ): CompletableFuture[B] = {
+    pprint.log(s"Sending request to $endpoint")
+
     val request = new Request()
     request.setId(id.getAndIncrement())
     request.setMethod(endpoint)
@@ -136,6 +174,9 @@ object RemoteServer {
   trait Listener {
     def onOutput(output: OutputEventArguments): Unit
     def onTerminated(): Unit
+    def onBreakpoint(args: BreakpointEventArguments): Unit
+    def onStopped(args: StoppedEventArguments): Unit
+    def onThread(args: ThreadEventArguments): Unit
   }
 
   def apply(socket: Socket, listener: Listener)(
