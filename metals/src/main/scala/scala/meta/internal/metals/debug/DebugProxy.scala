@@ -26,6 +26,7 @@ private[debug] final class DebugProxy(
     client: RemoteEndpoint,
     server: ServerAdapter
 )(implicit ec: ExecutionContext) {
+  import scala.meta.internal.metals.JsonParser._
   private val exitStatus = Promise[ExitStatus]()
   @volatile private var outputTerminated = false
   private val cancelled = new AtomicBoolean()
@@ -96,21 +97,6 @@ private[debug] final class DebugProxy(
       outputTerminated = true
       server.send(message)
 
-    case message @ SourceRequest(args) =>
-      if (args.getSourceReference == 0) {
-        sourceAdapter.resolve(args.getSource) match {
-          case Some(path) =>
-            val content = path.readAllBytes
-            val source = new SourceResponse
-            source.setContent(new String(content))
-            val respone = DebugProtocol.toResponse(message.getId, source)
-            client.consume(respone)
-          case None =>
-            server.send(message)
-        }
-      } else {
-        server.send(message)
-      }
     case message =>
       server.send(message)
   }
@@ -127,8 +113,11 @@ private[debug] final class DebugProxy(
       client.consume(message)
     case message @ DebugProtocol.StackTraceResponse(response) =>
       response.getStackFrames.foreach { frame =>
-        sourceAdapter.adapt(frame.getSource)
+        if (sourceAdapter.adapt(frame.getSource) == false) {
+          frame.setSource(null)
+        }
       }
+      message.setResult(response.toJson)
       client.consume(message)
     case message =>
       client.consume(message)
@@ -161,13 +150,14 @@ private[debug] object DebugProxy {
       client <- awaitClient()
         .map(new SocketEndpoint(_))
         .map(endpoint => withLogger(endpoint, "dap-client"))
-    } yield
+    } yield {
       new DebugProxy(
         sourceAdapter,
         name,
         client,
         new ServerAdapter(server)
       )
+    }
   }
 
   private def withLogger(

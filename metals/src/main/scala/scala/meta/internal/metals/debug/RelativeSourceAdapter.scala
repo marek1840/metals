@@ -1,34 +1,32 @@
 package scala.meta.internal.metals.debug
+
 import org.eclipse.lsp4j.debug.Source
 import scala.meta.internal.metals.ClassPathSourceIndex
 import scala.meta.internal.metals.DefinitionProvider
+import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.mtags.OnDemandSymbolIndex
 import scala.meta.internal.semanticdb.Scala.Symbols
-import scala.meta.io.AbsolutePath
 
 final class RelativeSourceAdapter(
     classPathSources: ClassPathSourceIndex,
     onDemandSymbolIndex: OnDemandSymbolIndex,
     definitionProvider: DefinitionProvider
 ) {
-  def adapt(source: Source): Unit = {
-    if (source == null) return
+  def adapt(source: Source): Boolean = {
+    if (source == null) return true
 
     val classPathLocation = source.getPath
     classPathSources.resolve(classPathLocation).orElse(foo(source)) match {
       case Some(path) =>
-        source.setPath(path.toString())
+        source.setPath(path.toString)
+        true
       case None =>
-        scribe.warn("???")
+        scribe.debug(s"No sources for $classPathLocation")
+        false
     }
   }
 
-  def resolve(source: Source): Option[AbsolutePath] = {
-    import scala.meta.internal.metals.MetalsEnrichments._
-    classPathSources.resolve(source.getPath).orElse(foo(source))
-  }
-
-  def foo(source: Source): Option[AbsolutePath] = {
+  def foo(source: Source): Option[String] = {
     var symbols = List("", Symbols.RootPackage)
     val segment = new StringBuilder
     val iterator =
@@ -47,13 +45,13 @@ final class RelativeSourceAdapter(
     }
     symbols = for {
       qualifier <- symbols
-      symbol <- List("#", ".").map(segment + _)
-    } yield qualifier + symbol
+      typeSymbol <- List("#", ".").map(segment + _)
+    } yield qualifier + typeSymbol
 
-    val uris = symbols
-      .map(scala.meta.internal.mtags.Symbol.apply)
-      .flatMap(onDemandSymbolIndex.definition)
-      .map(_.path)
+    val uris = symbols.flatMap { symbol =>
+      definitionProvider.fromSymbol(symbol).asScala.map(_.getUri)
+    }
+
     uris.headOption
   }
 }
