@@ -135,8 +135,6 @@ private[debug] final class RemoteServer(
       endpoint: String,
       arg: A
   ): CompletableFuture[B] = {
-    pprint.log(s"Sending request to $endpoint")
-
     val request = new Request()
     request.setId(id.getAndIncrement())
     request.setMethod(endpoint)

@@ -43,7 +43,7 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
   private var terminationPromise = Promise[Unit]()
   private val outputBuffer = new StringBuilder
   private val prefixes = mutable.Set.empty[Prefix]
-  private val breakpoints = new Breakpoints(this)
+  private val breakpoints = new BreakpointCollector(this)
 
   def initialize: Future[Capabilities] = {
     val arguments = new InitializeRequestArguments
@@ -96,30 +96,6 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
     args.setSource(path.toDAP)
     args.setBreakpoints(Array(position.toBreakpoint))
     server.setBreakpoints(args).asScala
-  }
-
-  def stackTrace(thread: Long): Future[StackTraceResponse] = {
-    val args = new StackTraceArguments
-    args.setThreadId(thread)
-    server.stackTrace(args).asScala
-  }
-
-  def scopes(frame: Long): Future[ScopesResponse] = {
-    val args = new ScopesArguments
-    args.setFrameId(frame)
-    server.scopes(args).asScala
-  }
-
-  def variables(id: Long): Future[VariablesResponse] = {
-    val args = new VariablesArguments
-    args.setVariablesReference(id)
-    server.variables(args).asScala
-  }
-
-  def continue(threadId: Long): Future[ContinueResponse] = {
-    val continueArgs = new ContinueArguments
-    continueArgs.setThreadId(threadId)
-    server.continue_(continueArgs).asScala
   }
 
   /**
