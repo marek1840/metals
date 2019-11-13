@@ -6,7 +6,7 @@ import ch.epfl.scala.bsp4j.ScalaMainClass
 import tests.BaseLspSuite
 import scala.meta.inputs.Input
 import scala.meta.inputs.Position
-import scala.meta.internal.metals.debug.BreakpointHit
+import scala.meta.internal.metals.debug.Variables
 import scala.meta.internal.metals.debug.Scope
 import scala.meta.internal.metals.debug.Variable
 
@@ -20,10 +20,10 @@ object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
                 |  }
                 |}""".stripMargin,
     expectedHits = List(
-      BreakpointHit(
+      StackFrame(
         Scope.local(Variable("value: int = 1"))
       ),
-      BreakpointHit(
+      StackFrame(
         Scope.local(Variable("value: int = 2"))
       )
     )
@@ -37,7 +37,7 @@ object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
                 |}
                 |""".stripMargin,
     expectedHits = List(
-      BreakpointHit(
+      StackFrame(
         Scope.local(Variable("this: Main$"), Variable("args: String[]"))
       )
     )
@@ -63,7 +63,7 @@ object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
                 |}
                 |""".stripMargin,
     expectedHits = List(
-      BreakpointHit(
+      StackFrame(
         Scope.local(
           Variable("aByte: byte = 1"),
           Variable("aShort: short = 1"),
@@ -81,7 +81,7 @@ object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
 
   def assertStackFrame(
       name: String
-  )(source: String, expectedHits: List[BreakpointHit]): Unit = {
+  )(source: String, expectedHits: List[Variables]): Unit = {
     testAsync(name) {
       cleanWorkspace()
       val (text, position): (String, Position.Range) = {

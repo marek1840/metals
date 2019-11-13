@@ -59,10 +59,9 @@ abstract class BreakpointHandler {
     server.continue_(continueArgs).asScala
   }
 
-  final def hit(threadId: Long): Future[(Breakpoint, BreakpointHit)] = {
+  final def frame(threadId: Long): Future[(Variables, Variables)] = {
     for {
       frame <- stackTrace(threadId, depth = 1).map(_.getStackFrames.head)
-      breakpoint <- findBreakpoint(frame)
       scopes <- scopes(frame.getId).map(_.getScopes).flatMap {
         case scopes if scopes.isEmpty =>
           Future.failed(new IllegalStateException("No variable scopes"))
@@ -80,9 +79,16 @@ abstract class BreakpointHandler {
           }
         }
         Future.sequence(foo.toList).map { scopes =>
-          BreakpointHit(scopes.toMap)
+          StackFrame(scopes.toMap)
         }
       }
+    } yield (frame, hit)
+  }
+
+  final def hit(threadId: Long): Future[(Breakpoint, StackFrame)] = {
+    for {
+      (frame, hit) <- frame(threadId)
+      breakpoint <- findBreakpoint(frame)
     } yield (breakpoint, hit)
   }
 

@@ -18,7 +18,6 @@ import org.eclipse.lsp4j.debug.ScopesArguments
 import org.eclipse.lsp4j.debug.ScopesResponse
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments
 import org.eclipse.lsp4j.debug.SetBreakpointsResponse
-import org.eclipse.lsp4j.debug.StackFrame
 import org.eclipse.lsp4j.debug.StackTraceArguments
 import org.eclipse.lsp4j.debug.StackTraceResponse
 import org.eclipse.lsp4j.debug.StoppedEventArguments
@@ -32,18 +31,26 @@ import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.meta.inputs.Position
 import scala.meta.internal.metals.MetalsEnrichments._
+import scala.meta.internal.metals.debug.Breakpoints.StackFrame
+import scala.meta.internal.metals.debug.Debuggee.ThreadId
 import scala.meta.internal.metals.debug.TestDebugger.Prefix
 import scala.meta.io.AbsolutePath
 
-final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
+final class TestDebugger(
+    connect: RemoteServer.Listener => RemoteServer,
+    breakpointHandler: RemoteServer => BreakpointHandler
+)(
     implicit ec: ExecutionContext
 ) extends RemoteServer.Listener {
 
   @volatile private var server: RemoteServer = connect(this)
-  private var terminationPromise = Promise[Unit]()
+  @volatile private var terminationPromise = Promise[Unit]()
+  @volatile private var debuggeeStopped = Promise[StackFrame]()
+//  @volatile private var debuggeeListener = Breakpoints.
+
   private val outputBuffer = new StringBuilder
   private val prefixes = mutable.Set.empty[Prefix]
-  private val breakpoints = new BreakpointCollector(this)
+  private val breakpoints = breakpointHandler(server)
 
   def initialize: Future[Capabilities] = {
     val arguments = new InitializeRequestArguments
@@ -122,7 +129,13 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
 
   def output: String = outputBuffer.toString()
 
-  def breakpointUsage = breakpoints()
+  def onBreakpoint(
+      breakpointHandler: RemoteServer => Breakpoints.Listener
+  ): Future[Unit] = {
+    val handler = breakpointHandler(server)
+    debuggeeStopped.future.flatMap(handler.onStopped)
+    ???
+  }
 
   def close(): Unit = {
     server.cancel()
@@ -146,10 +159,6 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
     terminationPromise.trySuccess(())
   }
 
-  override def onThread(args: ThreadEventArguments): Unit = {
-    println(args)
-  }
-
   override def onBreakpoint(args: BreakpointEventArguments): Unit = {
     import org.eclipse.lsp4j.debug.{BreakpointEventArgumentsReason => Reason}
     val breakpoint = args.getBreakpoint
@@ -165,12 +174,57 @@ final class TestDebugger(connect: RemoteServer.Listener => RemoteServer)(
     import org.eclipse.lsp4j.debug.{StoppedEventArgumentsReason => Reason}
     args.getReason match {
       case Reason.BREAKPOINT =>
-        breakpoints.onStopped(args.getThreadId)
+        frame(args.getThreadId)
+          .map(debuggeeStopped.success)
+          .onComplete { _ =>
+            debuggeeStopped = Promise()
+          }
       case _ =>
         Future.failed(
           new IllegalStateException(s"Unsupported reason ${args.getReason}")
         )
     }
+  }
+
+  def frame(threadId: Long): Future[StackFrame] = {
+    def stackTrace(thread: Long): Future[StackTraceResponse] = {
+      val args = new StackTraceArguments
+      args.setThreadId(thread)
+      args.setLevels(1L)
+      server.stackTrace(args).asScala
+    }
+
+    def scopes(frame: Long): Future[ScopesResponse] = {
+      val args = new ScopesArguments
+      args.setFrameId(frame)
+      server.scopes(args).asScala
+    }
+
+    def variables(id: Long): Future[VariablesResponse] = {
+      val args = new VariablesArguments
+      args.setVariablesReference(id)
+      server.variables(args).asScala
+    }
+
+    for {
+      frame <- stackTrace(threadId).map(_.getStackFrames.head)
+      scopes <- scopes(frame.getId).map(_.getScopes)
+      variables <- {
+        val scopeVariables = scopes.map { scope =>
+          variables(scope.getVariablesReference).map { response =>
+            val variables = response.getVariables
+              .map(v => Variable(v.getName, v.getType, v.getValue))
+              .toList
+
+            scope.getName -> variables
+          }
+        }
+
+        Future
+          .sequence(scopeVariables.toList)
+          .map(scopes => Variables(scopes.toMap))
+      }
+    } yield StackFrame(threadId, frame, variables)
   }
 }
 
@@ -184,7 +238,7 @@ object TestDebugger {
       RemoteServer(socket, listener)
     }
 
-    new TestDebugger(connect)
+    new TestDebugger(connect, ???)
   }
 
   final case class Prefix(pattern: String, promise: Promise[Unit])

@@ -1,6 +1,6 @@
 package scala.meta.internal.metals.debug
 
-final case class BreakpointHit(scopes: Map[String, List[Variable]]) {
+final case class Variables(scopes: Map[String, List[Variable]]) {
   override def toString: String = {
     val serializedScopes = scopes.toList
       .sortBy(_._1)
@@ -12,6 +12,7 @@ final case class BreakpointHit(scopes: Map[String, List[Variable]]) {
     serializedScopes.mkString("\n\n")
   }
 }
+
 final case class Variable(name: String, `type`: String, value: Variable.Value) {
   override def toString: String = value match {
     case Variable.MemoryReference => s"$name: ${`type`}"
@@ -25,9 +26,9 @@ object Scope {
   }
 }
 
-object BreakpointHit {
-  def apply(variables: (String, List[Variable])*): BreakpointHit = {
-    BreakpointHit(variables.toMap)
+object Variables {
+  def apply(variables: (String, List[Variable])*): Variables = {
+    Variables(variables.toMap)
   }
 }
 

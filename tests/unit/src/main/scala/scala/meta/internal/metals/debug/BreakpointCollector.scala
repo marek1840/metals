@@ -8,9 +8,9 @@ import scala.concurrent.Future
 final class BreakpointCollector(val server: RemoteServer)(
     implicit val ec: ExecutionContext
 ) extends BreakpointHandler {
-  private val hits = TrieMap.empty[Breakpoint, mutable.Buffer[BreakpointHit]]
+  private val hits = TrieMap.empty[Breakpoint, mutable.Buffer[Variables]]
 
-  def apply(): collection.Map[Breakpoint, Seq[BreakpointHit]] = {
+  def apply(): collection.Map[Breakpoint, Seq[Variables]] = {
     hits.mapValues(_.toSeq)
   }
 
