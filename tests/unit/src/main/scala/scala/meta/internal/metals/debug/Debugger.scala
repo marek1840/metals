@@ -1,11 +1,141 @@
 package scala.meta.internal.metals.debug
+import java.lang
+import java.util.Collections
+import java.util.concurrent.TimeUnit
+import org.eclipse.lsp4j.debug.Capabilities
+import org.eclipse.lsp4j.debug.ConfigurationDoneArguments
+import org.eclipse.lsp4j.debug.ContinueArguments
+import org.eclipse.lsp4j.debug.DisconnectArguments
+import org.eclipse.lsp4j.debug.InitializeRequestArguments
+import org.eclipse.lsp4j.debug.NextArguments
+import org.eclipse.lsp4j.debug.ScopesArguments
+import org.eclipse.lsp4j.debug.ScopesResponse
+import org.eclipse.lsp4j.debug.SetBreakpointsArguments
+import org.eclipse.lsp4j.debug.SetBreakpointsResponse
+import org.eclipse.lsp4j.debug.Source
+import org.eclipse.lsp4j.debug.SourceBreakpoint
+import org.eclipse.lsp4j.debug.StackTraceArguments
+import org.eclipse.lsp4j.debug.StackTraceResponse
+import org.eclipse.lsp4j.debug.StepInArguments
+import org.eclipse.lsp4j.debug.StepOutArguments
+import org.eclipse.lsp4j.debug.VariablesArguments
+import org.eclipse.lsp4j.debug.VariablesResponse
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 
-trait Debugger
+import scala.meta.internal.metals.MetalsEnrichments._
 
-object Debugger {
-  final case class Running(stoppageHandler: Stoppage.Handler) extends Debugger {}
+final class Debugger(server: RemoteServer)(implicit ec: ExecutionContext) {
 
-  final case class Finished(output: String, errorOutput: String)
+  def initialize: Future[Capabilities] = {
+    val arguments = new InitializeRequestArguments
+    arguments.setAdapterID("test-adapter")
+    server.initialize(arguments).asScala
+  }
 
-  final case class Failed(cause: Throwable) extends Debugger
+  def launch: Future[Unit] = {
+    server.launch(Collections.emptyMap()).asScala.ignoreValue
+  }
+
+  def configurationDone: Future[Unit] = {
+    server
+      .configurationDone(new ConfigurationDoneArguments)
+      .asScala
+      .ignoreValue
+  }
+
+  def restart: Future[Unit] = {
+    val args = new DisconnectArguments
+    args.setRestart(true)
+    server.disconnect(args).asScala.ignoreValue
+  }
+
+  def disconnect: Future[Unit] = {
+    val args = new DisconnectArguments
+    args.setRestart(false)
+    args.setTerminateDebuggee(false)
+    server.disconnect(args).asScala.ignoreValue
+  }
+
+  def setBreakpoints(
+      source: Source,
+      breakpoints: Array[SourceBreakpoint]
+  ): Future[SetBreakpointsResponse] = {
+    val args = new SetBreakpointsArguments
+    args.setSource(source)
+    args.setBreakpoints(breakpoints)
+    server.setBreakpoints(args).asScala
+  }
+
+  def step(threadId: Long, nextStep: DebugStep): Future[Unit] = {
+    nextStep match {
+      case DebugStep.Continue =>
+        val args = new ContinueArguments()
+        args.setThreadId(threadId)
+        server.continue_(args).asScala.ignoreValue
+      case DebugStep.StepIn =>
+        val args = new StepInArguments()
+        args.setThreadId(threadId)
+        server.stepIn(args).asScala.ignoreValue
+      case DebugStep.StepOut =>
+        val args = new StepOutArguments()
+        args.setThreadId(threadId)
+        server.stepOut(args).asScala.ignoreValue
+      case DebugStep.StepOver =>
+        val args = new NextArguments()
+        args.setThreadId(threadId)
+        server.next(args).asScala.ignoreValue
+      case cause =>
+        val error = s"Unsupported debug step $cause"
+        Future.failed(new IllegalStateException(error))
+    }
+  }
+
+  def stackFrame(threadId: lang.Long): Future[StackFrame] = {
+    for {
+      frame <- stackTrace(threadId).map(_.getStackFrames.head)
+      scopes <- scopes(frame.getId).map(_.getScopes)
+      variables <- {
+        val scopeVariables = scopes.map { scope =>
+          variables(scope.getVariablesReference).map { response =>
+            val variables = response.getVariables
+              .map(v => Variable(v.getName, v.getType, v.getValue))
+              .toList
+
+            scope.getName -> variables
+          }
+        }
+
+        Future
+          .sequence(scopeVariables.toList)
+          .map(scopes => Variables(scopes.toMap))
+      }
+    } yield StackFrame(threadId, frame, variables)
+
+  }
+
+  def stackTrace(thread: Long): Future[StackTraceResponse] = {
+    val args = new StackTraceArguments
+    args.setThreadId(thread)
+    args.setLevels(1L)
+    server.stackTrace(args).asScala
+  }
+
+  def scopes(frame: Long): Future[ScopesResponse] = {
+    val args = new ScopesArguments
+    args.setFrameId(frame)
+    server.scopes(args).asScala
+  }
+
+  def variables(id: Long): Future[VariablesResponse] = {
+    val args = new VariablesArguments
+    args.setVariablesReference(id)
+    server.variables(args).asScala
+  }
+
+  def shutdown: Future[Unit] = {
+    server.listening.withTimeout(20, TimeUnit.SECONDS).andThen {
+      case _ => server.cancel()
+    }
+  }
 }

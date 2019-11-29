@@ -6,7 +6,7 @@ import scala.meta.io.AbsolutePath
 import scala.meta.internal.metals.MetalsEnrichments._
 
 object DapEnrichments {
-  implicit class XtensionAbsolutePath(path: AbsolutePath) {
+  implicit class DapXtensionAbsolutePath(path: AbsolutePath) {
     def toDAP: Source = {
       val source = new Source
       source.setName(path.filename)
@@ -15,7 +15,7 @@ object DapEnrichments {
     }
   }
 
-  implicit class XtensionPosition(position: Position) {
+  implicit class DapXtensionPosition(position: Position) {
     def toBreakpoint: SourceBreakpoint = {
       val breakpoint = new SourceBreakpoint
       breakpoint.setLine(position.startLine.toLong)

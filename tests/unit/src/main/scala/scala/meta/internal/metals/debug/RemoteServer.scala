@@ -124,8 +124,6 @@ private[debug] final class RemoteServer(
             notify(notification, listener.onOutput)
           case "terminated" =>
             listener.onTerminated()
-          case "breakpoint" =>
-            notify(notification, listener.onBreakpoint)
           case "stopped" =>
             notify(notification, listener.onStopped)
           case _ =>
@@ -190,7 +188,6 @@ object RemoteServer {
   trait Listener {
     def onOutput(output: OutputEventArguments): Unit
     def onTerminated(): Unit
-    def onBreakpoint(args: BreakpointEventArguments): Unit
     def onStopped(args: StoppedEventArguments): Unit
   }
 

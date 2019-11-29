@@ -1,12 +1,10 @@
 package tests
 
 import java.util.Collections.emptyList
-import java.util.concurrent.TimeUnit.SECONDS
-import ch.epfl.scala.bsp4j.ScalaMainClass
 import ch.epfl.scala.bsp4j.DebugSessionParamsDataKind
-import scala.meta.internal.metals.MetalsEnrichments._
-import scala.concurrent.duration.Duration
+import ch.epfl.scala.bsp4j.ScalaMainClass
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
 
 object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
 
@@ -44,9 +42,11 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
         new ScalaMainClass("a.Main", emptyList(), emptyList())
       )
       _ <- debugger.initialize
-      _ <- debugger.start
-      _ <- debugger.awaitCompletion
-    } yield assertNoDiff(debugger.output, "Foo")
+      _ <- debugger.launch
+      _ <- debugger.configurationDone
+      _ <- debugger.shutdown
+      output <- debugger.allOutput
+    } yield assertNoDiff(output, "Foo")
   }
 
   testAsync("disconnect") {
@@ -71,10 +71,12 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
         new ScalaMainClass("a.Main", emptyList(), emptyList())
       )
       _ <- debugger.initialize
-      _ <- debugger.start
+      _ <- debugger.launch
+      _ <- debugger.configurationDone
       _ <- debugger.disconnect
-      _ <- debugger.awaitCompletion
-    } yield assertNoDiff(debugger.output, "")
+      _ <- debugger.shutdown
+      output <- debugger.allOutput
+    } yield assertNoDiff(output, "")
   }
 
   testAsync("restart") {
@@ -100,8 +102,9 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
         new ScalaMainClass("a.Main", emptyList(), emptyList())
       )
       _ <- debugger.initialize
-      _ <- debugger.start
-      _ <- debugger.awaitOutput("Foo\n").withTimeout(5, SECONDS)
+      _ <- debugger.launch
+      _ <- debugger.configurationDone
+      _ <- debugger.awaitOutput("Foo\n")
 
       _ <- server.didSave("a/src/main/scala/a/Main.scala")(
         _.replaceAll("Foo", "Bar")
@@ -109,10 +112,12 @@ object DebugProtocolSuite extends BaseLspSuite("debug-protocol") {
       _ <- debugger.restart
 
       _ <- debugger.initialize
-      _ <- debugger.start
-      _ <- debugger.awaitOutput("Bar\n").withTimeout(5, SECONDS)
+      _ <- debugger.launch
+      _ <- debugger.configurationDone
+      _ <- debugger.awaitOutput("Bar\n")
       _ <- debugger.disconnect
-      _ <- debugger.awaitCompletion
-    } yield assertNoDiff(debugger.output, "Bar\n")
+      _ <- debugger.shutdown
+      output <- debugger.allOutput
+    } yield assertNoDiff(output, "Bar\n")
   }
 }

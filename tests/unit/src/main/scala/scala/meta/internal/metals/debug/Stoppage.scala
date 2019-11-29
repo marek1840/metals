@@ -1,10 +1,12 @@
 package scala.meta.internal.metals.debug
 
 import org.eclipse.lsp4j.{debug => dap}
-import scala.collection.mutable
 import scala.concurrent.Future
 
+final case class Stoppage(frame: StackFrame, cause: Stoppage.Cause)
+
 object Stoppage {
+
   sealed trait Cause
   object Cause {
     case class Breakpoint(info: dap.Breakpoint) extends Cause
@@ -12,12 +14,10 @@ object Stoppage {
   }
 
   trait Handler {
-    def apply(frame: StackFrame, cause: Cause): Future[DebugStep]
+    def apply(stoppage: Stoppage): Future[DebugStep]
   }
 
   object Handler {
-    val Continue: Handler = (_, _) => Future.successful(DebugStep.Continue)
+    val Continue: Handler = _ => Future.successful(DebugStep.Continue)
   }
-
-  case class Location(file: String, line: Int)
 }

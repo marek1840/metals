@@ -6,11 +6,10 @@ import ch.epfl.scala.bsp4j.ScalaMainClass
 import tests.BaseLspSuite
 import scala.meta.inputs.Input
 import scala.meta.inputs.Position
-import scala.meta.internal.metals.debug.Variables
 import scala.meta.internal.metals.debug.Scope
-import scala.meta.internal.metals.debug.Stoppage
 import scala.meta.internal.metals.debug.Variable
 import scala.meta.internal.metals.debug.VariableHoarder
+import scala.meta.internal.metals.debug.Variables
 
 object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
   assertStackFrame("foreach")(
@@ -81,6 +80,29 @@ object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
     )
   )
 
+  assertStackFrame("overridden-toString")(
+    source = """|object Main {
+                |  def main(args: Array[String]): Unit = {
+                |    val foo = new Foo
+                |>>    foo()
+                |  }
+                |}
+                |
+                |class Foo {
+                |  override def toString = "foo" 
+                |}
+                |""".stripMargin,
+    expectedVariables = List(
+      Variables(
+        Scope.local(
+          Variable("this: Main$"),
+          Variable("args: String[]"),
+          Variable("foo: Foo = foo")
+        )
+      )
+    )
+  )
+
   def assertStackFrame(
       name: String
   )(source: String, expectedVariables: List[Variables]): Unit = {
@@ -101,11 +123,11 @@ object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
              |{
              |  "a": {}
              |}
-             |/a/src/main/scala/a/Main.scala
+             |/a/src/main/scala/Main.scala
              |$text
              |""".stripMargin
         )
-        file = server.toPath("a/src/main/scala/a/Main.scala")
+        file = server.toPath("a/src/main/scala/Main.scala")
         debugger <- server.startDebugging(
           "a",
           DebugSessionParamsDataKind.SCALA_MAIN_CLASS,
@@ -116,7 +138,7 @@ object StackFrameDapSuite extends BaseLspSuite("stack-frame") {
         _ <- debugger.launch
         _ <- debugger.setBreakpoints(file, position)
         _ <- debugger.configurationDone
-        _ <- debugger.awaitCompletion
+        _ <- debugger.shutdown
         variables = variableHoarder.variables
       } yield {
         assertEquals(

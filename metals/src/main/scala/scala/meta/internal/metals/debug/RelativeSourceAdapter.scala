@@ -1,5 +1,6 @@
 package scala.meta.internal.metals.debug
 
+import java.net.URI
 import org.eclipse.lsp4j.debug.Source
 import scala.meta.internal.metals.ClassPathSourceIndex
 import scala.meta.internal.metals.DefinitionProvider
@@ -7,6 +8,8 @@ import scala.meta.internal.metals.MetalsEnrichments._
 import scala.meta.internal.mtags.OnDemandSymbolIndex
 import scala.meta.internal.semanticdb.Scala.Symbols
 
+// TODO what when package does not match the actual directory
+//  (e.g package foo.bar in directory baz)?
 final class RelativeSourceAdapter(
     classPathSources: ClassPathSourceIndex,
     onDemandSymbolIndex: OnDemandSymbolIndex,
@@ -16,7 +19,12 @@ final class RelativeSourceAdapter(
     if (source == null) return true
 
     val classPathLocation = source.getPath
-    classPathSources.resolve(classPathLocation).orElse(foo(source)) match {
+    val actualPath = classPathSources
+      .resolve(classPathLocation)
+      .map(_.toURI)
+      .orElse(findDefinition(source))
+
+    actualPath match {
       case Some(path) =>
         source.setPath(path.toString)
         true
@@ -26,11 +34,15 @@ final class RelativeSourceAdapter(
     }
   }
 
-  def foo(source: Source): Option[String] = {
+  def findDefinition(source: Source): Option[URI] = {
     var symbols = List("", Symbols.RootPackage)
     val segment = new StringBuilder
     val iterator =
-      source.getPath.stripSuffix(".scala").stripSuffix(".java").iterator
+      source.getPath
+        .stripSuffix(".scala")
+        .stripSuffix(".java")
+        .iterator
+
     while (iterator.hasNext) {
       val c = iterator.next()
       if (c == '$') {
@@ -49,9 +61,9 @@ final class RelativeSourceAdapter(
     } yield qualifier + typeSymbol
 
     val uris = symbols.flatMap { symbol =>
-      definitionProvider.fromSymbol(symbol).asScala.map(_.getUri)
+      definitionProvider.fromSymbol(symbol).asScala
     }
 
-    uris.headOption
+    uris.headOption.map(location => URI.create(location.getUri))
   }
 }
